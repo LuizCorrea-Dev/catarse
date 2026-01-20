@@ -1,0 +1,21 @@
+
+:root {
+  /* Cores Principais */
+  --color-primary: #50c878;      /* Verde-Menta (Cura/Frescor) */
+  --color-vibe: #FFC300;         /* Amarelo-Dourado/Elétrico (Energia/Otimismo) */
+  --color-bg: #1e293b;           /* Azul Marinho Escuro (Estabilidade/Introspecção) */
+  --color-bg-darker: #0f172a;    /* Fundo ainda mais profundo */
+  
+  /* Estados e Auxiliares */
+  --color-danger: #ef4444;
+  --color-warning: #f59e0b;
+  --color-info: #3b82f6;
+  
+  /* Tipografia */
+  --font-main: 'Inter', system-ui, -apple-system, sans-serif;
+  
+  /* Sombras */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}

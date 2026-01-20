@@ -1,0 +1,298 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>CATARSE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --color-primary: #50c878;
+        --color-vibe: #FFC300;
+        --color-bg: #1e293b;
+        
+        /* Menu Animation Variables */
+        --bgColorMenu: #0f172a;
+        --duration: 0.7s; 
+      }
+
+      html {
+        box-sizing: border-box;
+      }
+      
+      *, *::before, *::after {
+        box-sizing: inherit;
+      }
+
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: var(--color-bg);
+        color: white;
+        margin: 0;
+        overflow-x: hidden;
+        width: 100%;
+        -webkit-tap-highlight-color: transparent;
+      }
+      #root {
+        width: 100%;
+        overflow-x: hidden;
+      }
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0f172a;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 4px;
+      }
+
+      /* Animated Menu CSS */
+      .menu {
+        margin: 0 auto; 
+        display: flex;
+        width: 100%;
+        /* AUMENTADO: Para ficar bem largo no Tablet Horizontal */
+        max-width: 65em; 
+        font-size: 1.5em; /* Tamanho padrão para telas gigantes (> 1280px) */
+        padding: 0 2em;
+        position: relative;
+        align-items: center;
+        justify-content: center;
+        background-color: var(--bgColorMenu);
+        padding-bottom: 0.5em;
+      }
+
+      .menu__item {
+        all: unset;
+        flex-grow: 1;
+        z-index: 100;
+        display: flex;
+        cursor: pointer;
+        position: relative;
+        border-radius: 50%;
+        align-items: center;
+        will-change: transform;
+        justify-content: center;
+        padding: 0.55em 0 0.85em;
+        /* A mágica da suavidade: usa timeOut se definido (resize), senão usa duration (click) */
+        transition: transform var(--timeOut, var(--duration));
+      }
+
+      .menu__item::before {
+        content: "";
+        z-index: -1;
+        width: 4.2em;
+        height: 4.2em;
+        border-radius: 50%;
+        position: absolute;
+        transform: scale(0);
+        transition: background-color var(--duration), transform var(--duration);
+      }
+
+      .menu__item.active {
+        transform: translate3d(0, -.8em, 0);
+      }
+
+      .menu__item.active::before {
+        transform: scale(1);
+        background-color: var(--bgColorItem);
+      }
+
+      /* Icon Animation Definition */
+      .icon {
+        width: 2.6em;
+        height: 2.6em;
+        /* Props padrão do SVG */
+        stroke: currentColor; 
+        fill: transparent;
+        stroke-width: 1.5pt; /* Levemente mais fino para elegância */
+        stroke-miterlimit: 10;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-dasharray: 400;
+      }
+
+      .menu__item.active .icon {
+        animation: strok 1.5s reverse;
+      }
+
+      @keyframes strok {
+        100% {
+          stroke-dashoffset: 400;
+        }
+      }
+
+      .menu__border {
+        left: 0;
+        bottom: 99%;
+        width: 10.9em;
+        height: 2.4em;
+        position: absolute;
+        clip-path: url(#menu);
+        will-change: transform;
+        background-color: var(--bgColorMenu);
+        transition: transform var(--timeOut, var(--duration));
+      }
+
+      .svg-container {
+        width: 0;
+        height: 0;
+        position: absolute;
+      }
+
+      /* MEDIA QUERIES */
+      
+      /* AJUSTE SOLICITADO: Tablet Horizontal / Laptop (Abaixo de 1280px) */
+      /* Reduzimos de 1.5em para 0.95em (~40% de redução) */
+      @media screen and (max-width: 80em) {
+        .menu {
+          font-size: 0.95em; 
+          padding: 0 1.5em; 
+        }
+      }
+      
+      /* Mobile / Tablet Vertical */
+      @media screen and (max-width: 48em) {
+        .menu {
+          font-size: 0.85em; 
+          padding: 0 1em; 
+        }
+      }
+      
+      @media screen and (max-width: 30em) {
+        .menu {
+          font-size: .75em;
+          padding: 0 0.5em;
+        }
+      }
+
+      /* --- UPDATED EXPLOSIVE BUBBLY BUTTON ANIMATION --- */
+      .bubbly-button {
+        position: relative;
+        -webkit-appearance: none;
+        appearance: none;
+        cursor: pointer;
+        transition: transform ease-in 0.1s, box-shadow ease-in 0.25s;
+      }
+
+      .bubbly-button:focus {
+        outline: 0;
+      }
+
+      .bubbly-button::before, .bubbly-button::after {
+        position: absolute;
+        content: '';
+        display: block;
+        width: 140%;
+        height: 100%;
+        left: -20%;
+        z-index: -1000;
+        transition: all ease-in-out 0.5s;
+        background-repeat: no-repeat;
+      }
+
+      .bubbly-button::before {
+        display: none;
+        top: -75%;
+        background-image: 
+          radial-gradient(circle, #FFC300 20%, transparent 20%),
+          radial-gradient(circle, transparent 20%, #FFC300 20%, transparent 30%),
+          radial-gradient(circle, #FFC300 20%, transparent 20%), 
+          radial-gradient(circle, #FFC300 20%, transparent 20%),
+          radial-gradient(circle, transparent 10%, #FFC300 15%, transparent 20%),
+          radial-gradient(circle, #FFC300 20%, transparent 20%),
+          radial-gradient(circle, #FFC300 20%, transparent 20%),
+          radial-gradient(circle, #FFC300 20%, transparent 20%),
+          radial-gradient(circle, #FFC300 20%, transparent 20%);
+        background-size: 10% 10%, 20% 20%, 15% 15%, 20% 20%, 18% 18%, 10% 10%, 15% 15%, 10% 10%, 18% 18%;
+      }
+
+      .bubbly-button::after {
+        display: none;
+        bottom: -75%;
+        background-image: 
+          radial-gradient(circle, #FFC300 20%, transparent 20%), 
+          radial-gradient(circle, #FFC300 20%, transparent 20%),
+          radial-gradient(circle, transparent 10%, #FFC300 15%, transparent 20%),
+          radial-gradient(circle, #FFC300 20%, transparent 20%),
+          radial-gradient(circle, #FFC300 20%, transparent 20%),
+          radial-gradient(circle, #FFC300 20%, transparent 20%),
+          radial-gradient(circle, #FFC300 20%, transparent 20%);
+        background-size: 15% 15%, 20% 20%, 18% 18%, 20% 20%, 15% 15%, 10% 10%, 20% 20%;
+      }
+
+      .bubbly-button:active {
+        transform: scale(0.9);
+      }
+
+      .bubbly-button.animate::before {
+        display: block;
+        animation: topBubbles 0.75s ease-in-out;
+      }
+
+      .bubbly-button.animate::after {
+        display: block;
+        animation: bottomBubbles 0.75s ease-in-out;
+      }
+
+      @keyframes topBubbles {
+        0% {
+          background-position: 5% 90%, 10% 90%, 10% 90%, 15% 90%, 25% 90%, 25% 90%, 40% 90%, 55% 90%, 70% 90%;
+        }
+        50% {
+          background-position: 0% 80%, 0% 20%, 10% 40%, 20% 0%, 30% 30%, 22% 50%, 50% 50%, 65% 20%, 90% 30%;
+        }
+        100% {
+          background-position: 0% 70%, 0% 10%, 10% 30%, 20% -10%, 30% 20%, 22% 40%, 50% 40%, 65% 10%, 90% 20%;
+          background-size: 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%;
+        }
+      }
+
+      @keyframes bottomBubbles {
+        0% {
+          background-position: 10% -10%, 30% 10%, 55% -10%, 70% -10%, 85% -10%, 70% -10%, 70% 0%;
+        }
+        50% {
+          background-position: 0% 80%, 20% 80%, 45% 60%, 60% 100%, 75% 70%, 95% 60%, 105% 0%;
+        }
+        100% {
+          background-position: 0% 90%, 20% 90%, 45% 70%, 60% 110%, 75% 80%, 95% 70%, 110% 10%;
+          background-size: 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%;
+        }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.12.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.90.1"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+    
+    <!-- SVG ClipPath Definition for the Menu Animation -->
+    <div class="svg-container">
+      <svg viewBox="0 0 202.9 45.5">
+        <clipPath id="menu" clipPathUnits="objectBoundingBox" transform="scale(0.0049285362247413 0.021978021978022)">
+          <path d="M6.7,45.5c5.7,0.1,14.1-0.4,23.3-4c5.7-2.3,9.9-5,18.1-10.5c10.7-7.1,11.8-9.2,20.6-14.3c5-2.9,9.2-5.2,15.2-7
+            c7.1-2.1,13.3-2.3,17.6-2.1c4.2-0.2,10.5,0.1,17.6,2.1c6.1,1.8,10.2,4.1,15.2,7c8.8,5,9.9,7.1,20.6,14.3c8.3,5.5,12.4,8.2,18.1,10.5
+            c9.2,3.6,17.6,4.2,23.3,4H6.7z"/>
+        </clipPath>
+      </svg>
+    </div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
