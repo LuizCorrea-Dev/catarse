@@ -7,7 +7,8 @@ O **Catarse** é um MVP funcional de uma rede social alternativa baseada em "Slo
 ---
 
 ## ✨ A Visão
-Nascido da necessidade de um refúgio digital, o Catarse substitui o "like" vazio pela **VIBE** energia social (Verdade Integrada e Bem-Estar Emocional). 
+
+Nascido da necessidade de um refúgio digital, o Catarse substitui o "like" vazio pela **VIBE** energia social (Verdade Integrada e Bem-Estar Emocional).
 Aqui, cada interação tem um custo e cada criação tem um valor, forçando uma presença digital mais intencional e menos ruidosa.
 
 ---
@@ -17,28 +18,32 @@ Aqui, cada interação tem um custo e cada criação tem um valor, forçando uma
 O projeto já possui uma arquitetura robusta e serviços funcionais:
 
 ### 💎 Economia de VIBES
-* **Interação Consciente:** As ações de *Zapping* (curtir) e Comentar consomem VIBES do saldo do utilizador (`TransactionService.ts`).
-* **Recompensa por Criação:** Publicar conteúdo gera VIBES para o autor, incentivando a partilha de valor.
-* **Orvalho Diário:** Sistema lógico para distribuição de energia diária não acumulável, incentivando a generosidade.
+
+- **Interação Consciente:** As ações de _Zapping_ (curtir) e Comentar consomem VIBES do saldo do utilizador (`TransactionService.ts`).
+- **Recompensa por Criação:** Publicar conteúdo gera VIBES para o autor, incentivando a partilha de valor.
+- **Orvalho Diário:** Sistema lógico para distribuição de energia diária não acumulável, incentivando a generosidade.
 
 ### 📱 Experiência do Utilizador (UI/UX)
-* **Feed Cronológico:** Navegação real por tempo e filtros de tags emocionais (`#Paz`, `#Desabafo`, `#Gratidão`).
-* **Átrio da Leveza:** Espaço de imersão visual focado em imagens de contemplação (`AtrioLeveza.tsx`).
-* **Catálogo de Comunidades:** Sistema de navegação por grupos temáticos com feeds independentes.
-* **Perfil Completo:** Gestão de conexões, histórico de publicações e galeria pessoal.
+
+- **Feed Cronológico:** Navegação real por tempo e filtros de tags emocionais (`#Paz`, `#Desabafo`, `#Gratidão`).
+- **Átrio da Leveza:** Espaço de imersão visual focado em imagens de contemplação (`AtrioLeveza.tsx`).
+- **Catálogo de Comunidades:** Sistema de navegação por grupos temáticos com feeds independentes.
+- **Perfil Completo:** Gestão de conexões, histórico de publicações e galeria pessoal.
 
 ### ⚙️ Infraestrutura Técnica
-* **Arquitetura de Serviços:** Separação clara entre `PostService`, `TransactionService`, `ConnectionService` e `CommunityService`.
-* **Persistência de Dados:** Schema SQL pronto para **Supabase** (Auth, Tabelas de Perfis, Posts e Transações).
-* **Design System:** Implementado com Tailwind CSS, focado em "Dark Mode" de baixo contraste para reduzir a fadiga ocular.
+
+- **Arquitetura de Serviços:** Separação clara entre `PostService`, `TransactionService`, `ConnectionService` e `CommunityService`.
+- **Persistência de Dados:** Schema SQL pronto para **Supabase** (Auth, Tabelas de Perfis, Posts e Transações).
+- **Design System:** Implementado com Tailwind CSS, focado em "Dark Mode" de baixo contraste para reduzir a fadiga ocular.
 
 ---
 
 ## 🛠️ Stack Tecnológica
-* **Frontend:** React 18 + Vite + TypeScript.
-* **Estilização:** Tailwind CSS + Lucide Icons.
-* **Backend as a Service:** Supabase (PostgreSQL, Auth, Storage).
-* **Arquitetura:** Service-Oriented Architecture (SOA).
+
+- **Frontend:** React 18 + Vite + TypeScript.
+- **Estilização:** Tailwind CSS + Lucide Icons.
+- **Backend as a Service:** Supabase (PostgreSQL, Auth, Storage).
+- **Arquitetura:** Service-Oriented Architecture (SOA).
 
 ---
 
@@ -58,7 +63,7 @@ O projeto está preparado para as seguintes integrações futuras:
 
 1.  **Clonar o repositório:**
     ```bash
-    git clone [https://github.com/teu-utilizador/catarse.git](https://github.com/teu-utilizador/catarse.git)
+    git clone [https://github.com/LuizCorrea-Dev/catarse.git](https://github.com/LuizCorrea-Dev/catarse.git)
     ```
 2.  **Instalar dependências:**
     ```bash
@@ -78,8 +83,10 @@ O projeto está preparado para as seguintes integrações futuras:
 ---
 
 ## 🤝 Manifesto
-O Catarse não promete felicidade instantânea. Promete **espaço**. 
+
+O Catarse não promete felicidade instantânea. Promete **espaço**.
 Aqui, não precisas de atuar ou performar. Existir e partilhar a tua verdade já é o suficiente.
 
 ---
-*Projeto desenvolvido com foco em Portugal e Brasil, respeitando as normas de RGPD e LGPD.* 🌿
+
+_Projeto desenvolvido com foco em Portugal e Brasil, respeitando as normas de RGPD e LGPD._ 🌿

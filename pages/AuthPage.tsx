@@ -1,11 +1,9 @@
-
-import React from 'react';
-import { Feather } from 'lucide-react';
-import { AuthForm } from '../components/AuthForm';
+import React from "react";
+import { Feather } from "lucide-react";
+import { AuthForm } from "../components/AuthForm";
 
 const AuthPage: React.FC = () => {
   return (
-    // Usa fixed inset-0 z-50 para sobrepor o layout padrão do App sem precisar refatorar o roteamento principal
     <div className="fixed inset-0 z-[100] min-h-screen bg-[#0f172a] flex flex-col items-center justify-center p-4">
       {/* Background Decorativo */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -17,7 +15,9 @@ const AuthPage: React.FC = () => {
         <div className="bg-slate-800/50 p-4 rounded-full mb-4 border border-slate-700 shadow-xl backdrop-blur-sm">
           <Feather className="text-[#50c878]" size={48} strokeWidth={1.5} />
         </div>
-        <h1 className="text-4xl font-bold text-white tracking-tight mb-2">CATARSE</h1>
+        <h1 className="text-4xl font-bold text-white tracking-tight mb-2">
+          CATARSE
+        </h1>
         <p className="text-slate-400 text-lg font-light italic text-center max-w-sm">
           "Sua jornada de leveza começa no agora"
         </p>
