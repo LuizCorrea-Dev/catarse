@@ -521,30 +521,34 @@ export const AtrioModal: React.FC<AtrioModalProps> = ({
               <div className="border-t border-slate-700/50 pt-10 mt-10">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                   {/* CLICKABLE AUTHOR AREA */}
-                  <div
-                    className="flex items-start gap-4 cursor-pointer group w-full md:w-auto"
-                    onClick={goToProfile}
-                  >
-                    <img
-                      src={item.authorAvatar || "https://picsum.photos/100/100"}
-                      className="w-16 h-16 rounded-full border-2 border-[#50c878]/30 p-1 group-hover:border-[#50c878] transition-colors shrink-0 object-cover"
-                      alt={item.authorName}
-                    />
-                    <div className="text-left w-full">
-                      <p className="text-xs text-slate-400 uppercase tracking-widest font-bold mb-1">
-                        Criado por
-                      </p>
-                      <h3 className="text-xl font-bold text-white group-hover:text-[#50c878] transition-colors">
-                        {item.authorName || "Artista Anônimo"}
-                      </h3>
-
-                      {/* MOBILE BUTTONS - BELOW NAME */}
-                      {!isAuthor && (
-                        <div className="flex md:hidden items-center gap-3 mt-3 w-full">
-                          {actionButtons}
-                        </div>
-                      )}
+                  <div className="w-full md:w-auto">
+                    <div
+                      className="flex items-start gap-4 cursor-pointer group w-full md:w-auto"
+                      onClick={goToProfile}
+                    >
+                      <img
+                        src={
+                          item.authorAvatar || "https://picsum.photos/100/100"
+                        }
+                        className="w-16 h-16 rounded-full border-2 border-[#50c878]/30 p-1 group-hover:border-[#50c878] transition-colors shrink-0 object-cover"
+                        alt={item.authorName}
+                      />
+                      <div className="text-left w-full">
+                        <p className="text-xs text-slate-400 uppercase tracking-widest font-bold mb-1">
+                          Criado por
+                        </p>
+                        <h3 className="text-xl font-bold text-white group-hover:text-[#50c878] transition-colors">
+                          {item.authorName || "Artista Anônimo"}
+                        </h3>
+                      </div>
                     </div>
+
+                    {/* MOBILE BUTTONS - BELOW NAME AND AVATAR (CENTERED ON SCREEN) */}
+                    {!isAuthor && (
+                      <div className="flex md:hidden items-center justify-center gap-3 mt-4 w-full">
+                        {actionButtons}
+                      </div>
+                    )}
                   </div>
 
                   {isAuthor ? (
