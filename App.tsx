@@ -151,7 +151,7 @@ const AppContent: React.FC = () => {
                 <Route path="/atrio" element={<AtrioLeveza />} />
                 <Route path="/connections" element={<ConnectionsPage />} />
                 <Route path="/profile" element={<UserProfile onLogout={handleLogout} />} />
-                <Route path="/u/:userId" element={<PublicProfile />} /> 
+                <Route path="/u/:username" element={<PublicProfile />} /> 
                 <Route path="/create" element={<CreatePost />} />
                 <Route path="/communities" element={<CommunityCatalog />} />
                 <Route path="/communities/:id" element={<CommunityView />} />

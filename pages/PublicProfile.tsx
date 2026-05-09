@@ -26,7 +26,7 @@ interface UserProfileData {
 }
 
 const PublicProfile: React.FC = () => {
-    const { userId } = useParams<{ userId: string }>();
+    const { username } = useParams<{ username: string }>();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState<'posts' | 'atrio' | 'groups'>('posts');
@@ -36,55 +36,55 @@ const PublicProfile: React.FC = () => {
 
     // 1. Profile Info
     const { data: profile, isLoading: isLoadingProfile } = useQuery({
-        queryKey: ['profile', userId],
+        queryKey: ['profile', username],
         queryFn: async () => {
-            const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+            const { data, error } = await supabase.from('profiles').select('*').eq('username', username).single();
             if (error) throw error;
             return data as UserProfileData;
         },
-        enabled: !!userId
+        enabled: !!username
     });
 
     // 2. Stats & Relationship
     const { data: followers = [] } = useQuery({
-        queryKey: ['followers', userId],
-        queryFn: () => connectionService.getFollowers(userId),
-        enabled: !!userId
+        queryKey: ['followers', profile?.id],
+        queryFn: () => connectionService.getFollowers(profile!.id),
+        enabled: !!profile?.id
     });
     const { data: friends = [] } = useQuery({
-        queryKey: ['friends', userId],
-        queryFn: () => connectionService.getFriends(userId),
-        enabled: !!userId
+        queryKey: ['friends', profile?.id],
+        queryFn: () => connectionService.getFriends(profile!.id),
+        enabled: !!profile?.id
     });
     const { data: isFollowing } = useQuery({
-        queryKey: ['followState', 'current_user', userId],
-        queryFn: () => connectionService.getFollowState(userId!),
-        enabled: !!userId
+        queryKey: ['followState', 'current_user', profile?.id],
+        queryFn: () => connectionService.getFollowState(profile!.id),
+        enabled: !!profile?.id
     });
     const { data: fStatusRaw } = useQuery({
-        queryKey: ['friendshipStatus', 'current_user', userId],
-        queryFn: () => connectionService.getFriendshipStatus(userId!),
-        enabled: !!userId
+        queryKey: ['friendshipStatus', 'current_user', profile?.id],
+        queryFn: () => connectionService.getFriendshipStatus(profile!.id),
+        enabled: !!profile?.id
     });
 
     // 3. Content
     const { data: posts = [] } = useQuery({
-        queryKey: ['userPosts', userId],
-        queryFn: () => postService.getUserPosts(userId!, 'post'),
-        enabled: !!userId
+        queryKey: ['userPosts', profile?.id],
+        queryFn: () => postService.getUserPosts(profile!.id, 'post'),
+        enabled: !!profile?.id
     });
     const { data: atrioItems = [] } = useQuery({
-        queryKey: ['userAtrio', userId],
-        queryFn: () => atrioService.getUserItems(userId!),
-        enabled: !!userId
+        queryKey: ['userAtrio', profile?.id],
+        queryFn: () => atrioService.getUserItems(profile!.id),
+        enabled: !!profile?.id
     });
     const { data: groups = [] } = useQuery({
-        queryKey: ['userGroups', userId],
-        queryFn: () => communityService.getUserCommunities(userId!),
-        enabled: !!userId
+        queryKey: ['userGroups', profile?.id],
+        queryFn: () => communityService.getUserCommunities(profile!.id),
+        enabled: !!profile?.id
     });
 
-    const isLoading = isLoadingProfile || !userId;
+    const isLoading = isLoadingProfile || !username;
     const followersCount = followers.length;
     const friendsCount = friends.length;
     const friendStatus = fStatusRaw === 'pending_sent' || fStatusRaw === 'pending_received' ? 'pending' : fStatusRaw === 'accepted' ? 'accepted' : 'none';

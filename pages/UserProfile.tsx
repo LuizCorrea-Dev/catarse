@@ -928,7 +928,7 @@ const SettingsModal: React.FC<{
       }
   };
 
-  const publicProfileUrl = `catarse.life/${userData.username}`;
+  const publicProfileUrl = `catarse.life/u/${userData.username}`;
 
   return (
       <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-center p-0 md:p-4 animate-fade-in">
