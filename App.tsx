@@ -13,7 +13,7 @@ import PublicProfile from './pages/PublicProfile';
 import CreatePost from './pages/CreatePost';
 import CommunityCatalog from './pages/CommunityCatalog';
 import CommunityView from './pages/CommunityView';
-import InvitePage from './pages/InvitePage';
+import InvitePage from './pages/InvitePage.tsx';
 import ConnectionsPage from './pages/ConnectionsPage';
 import { SideNavigation, MobileNavigation } from './components/SideNavigation';
 import { AuthForm } from './components/AuthForm';
