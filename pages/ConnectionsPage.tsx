@@ -1,150 +1,138 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Search, Phone, Video, MoreVertical, Send, Image, 
+  Search, Phone, Video, MoreVertical, Send, Image as ImageIcon, 
   ArrowLeft, Circle, CheckCheck, Loader2, Paperclip, Star, Shield, Check, Clock
 } from 'lucide-react';
-import { connectionService, Friend, PrivateMessage } from '../backend/ConnectionService';
+import { connectionService, Friend, PrivateMessage, MessageType } from '../backend/ConnectionService';
 import { communityService } from '../backend/CommunityService';
+import { chatService } from '../backend/ChatService';
 import { supabase } from '../backend/supabase';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Virtuoso } from 'react-virtuoso';
 
 const ConnectionsPage: React.FC = () => {
+  const queryClient = useQueryClient();
   const [activeFriend, setActiveFriend] = useState<Friend | null>(null);
-  const [messages, setMessages] = useState<PrivateMessage[]>([]);
-  const [isLoadingList, setIsLoadingList] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string>('');
-  
-  // Tab State: 'friends' (Amigos com ou sem chat) | 'dms' (Conversas com não-amigos)
   const [sidebarTab, setSidebarTab] = useState<'friends' | 'dms'>('friends');
-  
-  // Mobile State
   const [showChatOnMobile, setShowChatOnMobile] = useState(false);
-
-  // Chat States
   const [inputText, setInputText] = useState('');
   const [isUploading, setIsUploading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Notification Counts
-  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
-
-  // Listas de dados
-  const [displayList, setDisplayList] = useState<Friend[]>([]);
-
-  // Action Loading
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
-      // Obter ID do usuário atual para alinhar o chat corretamente
-      supabase.auth.getUser().then(({ data: { user } }) => {
-          if (user) setCurrentUserId(user.id);
-      });
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setCurrentUserId(user.id);
+    });
   }, []);
 
-  const fetchConnectionsData = async () => {
-      setIsLoadingList(true);
-      
-      // 1. Buscar todas as conversas (DMs e Amigos misturados)
+  // 1. Query para Conexões (Conversas + Amigos)
+  const { data: connections = { items: [], unreadTotal: 0 }, isLoading: isLoadingList } = useQuery({
+    queryKey: ['connections', sidebarTab],
+    queryFn: async () => {
       const conversations = await connectionService.getConversations();
-      
-      // 2. Buscar lista oficial de amigos
       const myFriends = await connectionService.getFriends();
       const friendIds = new Set(myFriends.map(f => f.id));
+      const unreadTotal = conversations.reduce((acc, curr) => acc + (curr.unreadCount || 0), 0);
 
-      // Contagem de não lidas totais
-      const unreadCount = conversations.reduce((acc, curr) => acc + (curr.unreadCount || 0), 0);
-      setUnreadMessagesCount(unreadCount);
-
-      let finalList: Friend[] = [];
-
+      let items: Friend[] = [];
       if (sidebarTab === 'friends') {
-          // Lógica: Mostrar todos os amigos. Se tiver conversa, usa os dados da conversa (ultima msg), se não, usa dados do amigo.
-          finalList = myFriends.map(friend => {
-              const conversation = conversations.find(c => c.id === friend.id);
-              if (conversation) {
-                  return { ...friend, ...conversation, status: friend.status }; // Prioriza dados de chat mas mantém status de amigo
-              }
-              return friend;
-          });
-          
-          // Ordenar: Com mensagens recentes primeiro, depois alfabético
-          finalList.sort((a, b) => {
-              if (a.lastMessageTime && !b.lastMessageTime) return -1;
-              if (!a.lastMessageTime && b.lastMessageTime) return 1;
-              // Se ambos tem msg, comparar timestamp (mockado aqui por string, ideal seria timestamp numerico)
-              return 0; 
-          });
-
+        items = myFriends.map(friend => {
+          const conversation = conversations.find(c => c.id === friend.id);
+          return conversation ? { ...friend, ...conversation, status: friend.status } : friend;
+        });
+        items.sort((a, b) => (a.lastMessageTime && !b.lastMessageTime ? -1 : 1));
       } else {
-          // Lógica: Mostrar conversas com quem NÃO é amigo (DMs / Solicitações / Estranhos)
-          finalList = conversations.filter(conv => !friendIds.has(conv.id));
+        items = conversations.filter(conv => !friendIds.has(conv.id));
       }
+      return { items, unreadTotal };
+    },
+    refetchInterval: 10000,
+  });
 
-      setDisplayList(finalList);
-      setIsLoadingList(false);
-  };
+  // 2. Query para Mensagens do Chat Ativo
+  const { data: messages = [], isLoading: isLoadingMessages } = useQuery({
+    queryKey: ['messages', activeFriend?.id],
+    queryFn: () => activeFriend ? connectionService.getMessages(activeFriend.id) : Promise.resolve([]),
+    enabled: !!activeFriend,
+    refetchInterval: 5000,
+  });
 
+  // 3. Realtime DM Subscription
   useEffect(() => {
-    fetchConnectionsData();
-  }, [sidebarTab, activeFriend]); // Recarrega ao trocar aba ou selecionar amigo (para limpar unread)
+    if (!currentUserId) return;
 
-  useEffect(() => {
-    if (activeFriend) {
-      const fetchMsgs = async () => {
-        const data = await connectionService.getMessages(activeFriend.id);
-        setMessages(data);
-        scrollToBottom();
-      };
-      fetchMsgs();
+    const subscription = chatService.subscribeToDMs(currentUserId, (newMsg) => {
+        // 1. Invalidate connections list to update unread counts / moving to top
+        queryClient.invalidateQueries({ queryKey: ['connections'] });
+
+        // 2. If active chat is with the sender, update messages immediately
+        if (activeFriend && activeFriend.id === newMsg.senderId) {
+             queryClient.setQueryData(['messages', activeFriend.id], (old: PrivateMessage[] | undefined) => {
+                 if (!old) return [newMsg]; // Converters might be needed if types mismatch, but let's check
+                 // Conversion: ChatService Message -> PrivateMessage 
+                 const convertedMsg: PrivateMessage = {
+                     id: newMsg.id,
+                     senderId: newMsg.senderId,
+                     receiverId: newMsg.receiverId || currentUserId,
+                     content: newMsg.content,
+                     timestamp: new Date(newMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                     type: newMsg.type as MessageType,
+                     mediaUrl: newMsg.mediaUrl,
+                     isRead: false
+                 };
+                 if (old.some(m => m.id === convertedMsg.id)) return old;
+                 return [...old, convertedMsg];
+             });
+             
+             // Mark as read immediately if open? 
+             connectionService.markMessagesAsRead(activeFriend.id);
+        }
+    });
+
+    return () => {
+        subscription.unsubscribe();
+    };
+  }, [currentUserId, activeFriend, queryClient]);
+
+  // 3. Mutation para enviar mensagem
+  const sendMessageMutation = useMutation({
+    mutationFn: async ({ friendId, content, type, mediaUrl }: { friendId: string, content: string, type: MessageType, mediaUrl?: string }) => {
+      return connectionService.sendMessage(friendId, content, type, mediaUrl);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', activeFriend?.id] });
+      queryClient.invalidateQueries({ queryKey: ['connections'] });
+      setInputText('');
     }
-  }, [activeFriend]);
-
-  const scrollToBottom = () => {
-    setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
-  };
-
-  const handleSelectFriend = async (friend: Friend) => {
-    setActiveFriend(friend);
-    setShowChatOnMobile(true);
-    
-    if (friend.unreadCount > 0) {
-        await connectionService.markMessagesAsRead(friend.id);
-        // Atualização otimista da lista
-        setDisplayList(prev => prev.map(f => f.id === friend.id ? { ...f, unreadCount: 0 } : f));
-        setUnreadMessagesCount(prev => Math.max(0, prev - friend.unreadCount));
-    }
-  };
+  });
 
   const handleBackToList = () => {
     setShowChatOnMobile(false);
   };
 
-  const handleToggleCloseFriend = async (e: React.MouseEvent, friend: Friend) => {
-      e.stopPropagation();
-      await connectionService.toggleCloseFriend(friend.id);
-      // Optimistic update
-      setDisplayList(prev => prev.map(f => f.id === friend.id ? { ...f, isCloseFriend: !f.isCloseFriend } : f));
+  const handleSelectFriend = async (friend: Friend) => {
+    setActiveFriend(friend);
+    setShowChatOnMobile(true);
+    if (friend.unreadCount > 0) {
+      await connectionService.markMessagesAsRead(friend.id);
+      queryClient.invalidateQueries({ queryKey: ['connections'] });
+    }
   };
 
-  const handleSendMessage = async (e?: React.FormEvent) => {
+  const handleToggleCloseFriend = async (e: React.MouseEvent, friend: Friend) => {
+    e.stopPropagation();
+    await connectionService.toggleCloseFriend(friend.id);
+    queryClient.invalidateQueries({ queryKey: ['connections'] });
+  };
+
+  const handleSendMessage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!inputText.trim() || !activeFriend) return;
-
-    const msg = await connectionService.sendMessage(activeFriend.id, inputText, 'text');
-    setMessages(prev => [...prev, msg]);
-    setInputText('');
-    scrollToBottom();
-
-    // Atualizar a lista lateral para mostrar a ultima mensagem
-    setDisplayList(prev => prev.map(f => 
-        f.id === activeFriend.id 
-        ? { ...f, lastMessage: inputText, lastMessageTime: 'Agora' } 
-        : f
-    ));
+    sendMessageMutation.mutate({ friendId: activeFriend.id, content: inputText, type: 'text' });
   };
 
   // Função auxiliar para Upload
@@ -165,9 +153,9 @@ const ConnectionsPage: React.FC = () => {
               const publicUrl = await uploadMediaToSupabase(file);
               const type = file.type.startsWith('video') ? 'video' : file.type.startsWith('audio') ? 'audio' : 'image';
               
-              const msg = await connectionService.sendMessage(activeFriend.id, "Mídia", type, publicUrl);
-              setMessages(prev => [...prev, msg]);
-              scrollToBottom();
+              await connectionService.sendMessage(activeFriend.id, "Mídia", type as MessageType, publicUrl);
+              queryClient.invalidateQueries({ queryKey: ['messages', activeFriend.id] });
+              queryClient.invalidateQueries({ queryKey: ['connections'] });
           } catch (error) {
               console.error("Erro no upload:", error);
               alert("Falha ao enviar mídia.");
@@ -190,7 +178,7 @@ const ConnectionsPage: React.FC = () => {
       setActionLoading(null);
   };
 
-  const filteredList = displayList.filter(f => 
+  const filteredList = (connections.items || []).filter(f => 
     f.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -208,7 +196,7 @@ const ConnectionsPage: React.FC = () => {
                     Amigos
                 </button>
                 <button onClick={() => setSidebarTab('dms')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all relative ${sidebarTab === 'dms' ? 'bg-[#50c878] text-[#1e293b] shadow-lg' : 'text-slate-400 hover:text-white'}`}>
-                    DMs {unreadMessagesCount > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>}
+                    DMs {connections.unreadTotal > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>}
                 </button>
             </div>
 
@@ -224,7 +212,7 @@ const ConnectionsPage: React.FC = () => {
             </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 min-h-0">
             {isLoadingList ? (
                 <div className="flex justify-center py-10"><Loader2 className="animate-spin text-[#50c878]" /></div>
             ) : filteredList.length === 0 ? (
@@ -232,42 +220,46 @@ const ConnectionsPage: React.FC = () => {
                     {sidebarTab === 'friends' ? 'Nenhum amigo encontrado.' : 'Nenhuma DM encontrada.'}
                 </div>
             ) : (
-                filteredList.map(item => (
-                    <div 
-                        key={item.id}
-                        onClick={() => handleSelectFriend(item)}
-                        className={`flex items-center gap-3 p-4 cursor-pointer transition-colors border-b border-slate-800/50 hover:bg-slate-800/50 ${activeFriend?.id === item.id ? 'bg-slate-800 border-l-4 border-l-[#50c878]' : 'border-l-4 border-l-transparent'}`}
-                    >
-                        <div className="relative">
-                            <img src={item.avatar} alt={item.name} className="w-12 h-12 rounded-full object-cover bg-slate-700" />
-                            <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#0f172a] ${item.status === 'online' ? 'bg-[#50c878]' : item.status === 'busy' ? 'bg-red-500' : 'bg-slate-500'}`}></span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <div className="flex justify-between items-baseline mb-1">
-                                <h3 className={`font-bold text-sm truncate flex items-center gap-1 ${item.unreadCount > 0 ? 'text-white' : 'text-slate-300'}`}>
-                                    {item.name}
-                                    {item.isCloseFriend && <Star size={10} className="text-[#FFC300] fill-[#FFC300]" />}
-                                </h3>
-                                <span className={`text-[10px] ${item.unreadCount > 0 ? 'text-[#50c878] font-bold' : 'text-slate-500'}`}>{item.lastMessageTime}</span>
+                <Virtuoso
+                    style={{ height: '100%' }}
+                    data={filteredList}
+                    itemContent={(index, item) => (
+                        <div 
+                            key={item.id}
+                            onClick={() => handleSelectFriend(item)}
+                            className={`flex items-center gap-3 p-4 cursor-pointer transition-colors border-b border-slate-800/50 hover:bg-slate-800/50 ${activeFriend?.id === item.id ? 'bg-slate-800 border-l-4 border-l-[#50c878]' : 'border-l-4 border-l-transparent'}`}
+                        >
+                            <div className="relative">
+                                <img src={item.avatar} alt={item.name} className="w-12 h-12 rounded-full object-cover bg-slate-700" />
+                                <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#0f172a] ${item.status === 'online' ? 'bg-[#50c878]' : item.status === 'busy' ? 'bg-red-500' : 'bg-slate-500'}`}></span>
                             </div>
-                            <div className="flex justify-between items-center">
-                                <p className={`text-xs truncate ${item.unreadCount > 0 ? 'text-white font-medium' : 'text-slate-400'}`}>
-                                    {item.lastMessage || 'Clique para conversar'}
-                                </p>
-                                {item.unreadCount > 0 && <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.2rem] text-center shadow-lg">{item.unreadCount}</span>}
+                            <div className="flex-1 min-w-0">
+                                <div className="flex justify-between items-baseline mb-1">
+                                    <h3 className={`font-bold text-sm truncate flex items-center gap-1 ${item.unreadCount > 0 ? 'text-white' : 'text-slate-300'}`}>
+                                        {item.name}
+                                        {item.isCloseFriend && <Star size={10} className="text-[#FFC300] fill-[#FFC300]" />}
+                                    </h3>
+                                    <span className={`text-[10px] ${item.unreadCount > 0 ? 'text-[#50c878] font-bold' : 'text-slate-500'}`}>{item.lastMessageTime}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <p className={`text-xs truncate ${item.unreadCount > 0 ? 'text-white font-medium' : 'text-slate-400'}`}>
+                                        {item.lastMessage || 'Clique para conversar'}
+                                    </p>
+                                    {item.unreadCount > 0 && <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.2rem] text-center shadow-lg">{item.unreadCount}</span>}
+                                </div>
                             </div>
+                            {sidebarTab === 'friends' && (
+                                <button 
+                                    onClick={(e) => handleToggleCloseFriend(e, item)}
+                                    className={`p-2 rounded-full hover:bg-white/10 transition-colors ${item.isCloseFriend ? 'text-[#FFC300]' : 'text-slate-600'}`}
+                                    title="Melhor Amigo"
+                                >
+                                    <Star size={16} fill={item.isCloseFriend ? "currentColor" : "none"} />
+                                </button>
+                            )}
                         </div>
-                        {sidebarTab === 'friends' && (
-                            <button 
-                                onClick={(e) => handleToggleCloseFriend(e, item)}
-                                className={`p-2 rounded-full hover:bg-white/10 transition-colors ${item.isCloseFriend ? 'text-[#FFC300]' : 'text-slate-600'}`}
-                                title="Melhor Amigo"
-                            >
-                                <Star size={16} fill={item.isCloseFriend ? "currentColor" : "none"} />
-                            </button>
-                        )}
-                    </div>
-                ))
+                    )}
+                />
             )}
         </div>
       </div>
@@ -295,70 +287,64 @@ const ConnectionsPage: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-900/30 custom-scrollbar">
-                    {messages.map(msg => {
-                        // FIX: Agora usa o ID real do usuário para determinar o lado
-                        const isMe = msg.senderId === currentUserId;
-                        
-                        let inviteData = null;
-                        if (msg.type === 'promotion_request') {
-                            try { inviteData = JSON.parse(msg.content); } catch (e) {
-                                inviteData = { text: msg.content };
+                <div className="flex-1 min-h-0 bg-slate-900/30">
+                    <Virtuoso
+                        style={{ height: '100%' }}
+                        data={messages}
+                        initialTopMostItemIndex={messages.length - 1}
+                        followOutput="auto"
+                        itemContent={(index, msg) => {
+                            const isMe = msg.senderId === currentUserId;
+                            let inviteData = null;
+                            if (msg.type === 'promotion_request') {
+                                try { inviteData = JSON.parse(msg.content); } catch (e) {
+                                    inviteData = { text: msg.content };
+                                }
                             }
-                        }
+                            let bubbleClass = isMe ? 'bg-[#50c878] text-[#1e293b] rounded-tr-none' : 'bg-slate-800 text-white rounded-tl-none';
+                            if (msg.type === 'promotion_request' && isMe) {
+                                bubbleClass = 'bg-orange-500 text-white rounded-tr-none';
+                            }
 
-                        // Determine bubble style
-                        let bubbleClass = isMe ? 'bg-[#50c878] text-[#1e293b] rounded-tr-none' : 'bg-slate-800 text-white rounded-tl-none';
-                        
-                        // Special Orange style for SENT promotion requests (Pending)
-                        if (msg.type === 'promotion_request' && isMe) {
-                            bubbleClass = 'bg-orange-500 text-white rounded-tr-none';
-                        }
-
-                        return (
-                            <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[75%] md:max-w-[60%] rounded-2xl p-3 shadow-md ${bubbleClass}`}>
-                                    {msg.type === 'image' && <img src={msg.mediaUrl} className="rounded-lg mb-2 max-h-60 object-cover" />}
-                                    
-                                    {/* Normal Text Content */}
-                                    {msg.type !== 'promotion_request' && <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>}
-                                    
-                                    {/* Promotion Invite Card */}
-                                    {msg.type === 'promotion_request' && inviteData && (
-                                        <div className={`rounded-xl p-3 border ${isMe ? 'bg-black/10 border-white/20' : 'bg-slate-900/50 border-slate-700'}`}>
-                                            <div className={`flex items-center gap-2 mb-2 ${isMe ? 'text-white' : 'text-[#50c878]'}`}>
-                                                <Shield size={18} />
-                                                <span className="font-bold text-xs uppercase tracking-wide">Convite Oficial</span>
-                                            </div>
-                                            <p className="text-sm mb-4 font-medium">{inviteData.text}</p>
-                                            {!isMe ? (
-                                                <button 
-                                                    onClick={() => inviteData.communityId && handleAcceptPromotion(msg.id, inviteData.communityId)}
-                                                    className="w-full py-2 bg-[#50c878] text-[#1e293b] rounded-lg font-bold text-xs hover:bg-[#50c878]/90 transition-colors flex items-center justify-center gap-2"
-                                                >
-                                                    {actionLoading === msg.id ? <Loader2 size={14} className="animate-spin" /> : <><Check size={14} /> Aceitar Cargo</>}
-                                                </button>
-                                            ) : (
-                                                <div className="text-center text-xs opacity-90 italic flex items-center justify-center gap-1">
-                                                    <Clock size={12} /> Aguardando resposta...
+                            return (
+                                <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} p-4`}>
+                                    <div className={`max-w-[75%] md:max-w-[60%] rounded-2xl p-3 shadow-md ${bubbleClass}`}>
+                                        {msg.type === 'image' && <img src={msg.mediaUrl} className="rounded-lg mb-2 max-h-60 object-cover" />}
+                                        {msg.type !== 'promotion_request' && <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>}
+                                        {msg.type === 'promotion_request' && inviteData && (
+                                            <div className={`rounded-xl p-3 border ${isMe ? 'bg-black/10 border-white/20' : 'bg-slate-900/50 border-slate-700'}`}>
+                                                <div className={`flex items-center gap-2 mb-2 ${isMe ? 'text-white' : 'text-[#50c878]'}`}>
+                                                    <Shield size={18} />
+                                                    <span className="font-bold text-xs uppercase tracking-wide">Convite Oficial</span>
                                                 </div>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    <div className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${isMe ? 'opacity-80' : 'text-slate-400'}`}><span>{msg.timestamp}</span>{isMe && <CheckCheck size={12} />}</div>
+                                                <p className="text-sm mb-4 font-medium">{inviteData.text}</p>
+                                                {!isMe ? (
+                                                    <button 
+                                                        onClick={() => inviteData.communityId && handleAcceptPromotion(msg.id, inviteData.communityId)}
+                                                        className="w-full py-2 bg-[#50c878] text-[#1e293b] rounded-lg font-bold text-xs hover:bg-[#50c878]/90 transition-colors flex items-center justify-center gap-2"
+                                                    >
+                                                        {actionLoading === msg.id ? <Loader2 size={14} className="animate-spin" /> : <><Check size={14} /> Aceitar Cargo</>}
+                                                    </button>
+                                                ) : (
+                                                    <div className="text-center text-xs opacity-90 italic flex items-center justify-center gap-1">
+                                                        <Clock size={12} /> Aguardando resposta...
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                        <div className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${isMe ? 'opacity-80' : 'text-slate-400'}`}><span>{msg.timestamp}</span>{isMe && <CheckCheck size={12} />}</div>
+                                    </div>
                                 </div>
-                            </div>
-                        );
-                    })}
-                    <div ref={messagesEndRef} />
+                            );
+                        }}
+                    />
                 </div>
 
                 <div className="p-4 bg-[#1e293b] border-t border-slate-800">
                     <form onSubmit={handleSendMessage} className="flex items-end gap-2 bg-slate-800 p-2 rounded-2xl border border-slate-700 focus-within:border-[#50c878] transition-colors">
                         <div className="flex pb-2 pl-1 gap-1">
                             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg">
-                                {isUploading ? <Loader2 size={20} className="animate-spin" /> : <Image size={20} />}
+                                {isUploading ? <Loader2 size={20} className="animate-spin" /> : <ImageIcon size={20} />}
                             </button>
                             <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*,video/*,audio/*" />
                         </div>

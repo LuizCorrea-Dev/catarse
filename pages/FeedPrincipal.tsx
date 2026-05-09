@@ -1,119 +1,126 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Virtuoso } from 'react-virtuoso'; // O motor de virtualização
 import PostCard from '../components/PostCard';
+import PostSkeleton from '../components/PostSkeleton'; // Teu novo componente
 import { postService, Post } from '../backend/PostService';
-import { Loader2, Hash, X, Plus } from 'lucide-react';
+import { Hash, X, Plus, Loader2 } from 'lucide-react';
+import { PullToRefresh } from '../components/PullToRefresh';
+import { PostDetailModal } from '../components/PostDetailModal';
 
-interface FeedPrincipalProps {
-  onVibeUpdate?: (newBalance: number) => void;
-}
-
-const FeedPrincipal: React.FC<FeedPrincipalProps> = ({ onVibeUpdate }) => {
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+const FeedPrincipal: React.FC = () => {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [trendingTags, setTrendingTags] = useState<string[]>([]);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const queryClient = useQueryClient();
 
-  const fetchPosts = async (tag?: string) => {
-    setIsLoading(true);
-    try {
-      const data = await postService.getPosts(tag);
-      setPosts(data);
-    } catch (error) {
-      console.error("Falha ao carregar posts", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // 1. Tags com Cache
+  const { data: trendingTags = [] } = useQuery({
+    queryKey: ['trendingTags'],
+    queryFn: () => postService.getTrendingTags(),
+    staleTime: 1000 * 60 * 10,
+  });
 
-  const fetchTags = async () => {
-      const tags = await postService.getTrendingTags();
-      setTrendingTags(tags);
-  }
+  // 2. Infinite Query
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading
+  } = useInfiniteQuery({
+    queryKey: ['posts', selectedTag],
+    queryFn: ({ pageParam = 0 }) => postService.getPosts(selectedTag || undefined, undefined, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => lastPage.length === 20 ? allPages.length : undefined,
+  });
 
-  useEffect(() => {
-    fetchPosts(selectedTag || undefined);
-    fetchTags();
-  }, [selectedTag]);
+  const allPosts = data?.pages.flat() || [];
 
-  const handleTagClick = (tag: string) => {
-      if (selectedTag === tag) {
-          setSelectedTag(null);
-      } else {
-          setSelectedTag(tag);
-      }
+  const handleTagClick = (tag: string) => setSelectedTag(prev => prev === tag ? null : tag);
+
+  const handleRefresh = async () => {
+    await new Promise(resolve => setTimeout(resolve, 500)); 
+    await postService.getPosts(selectedTag || undefined, undefined, 0); 
+    window.location.reload(); 
   };
 
   return (
-    <div className="w-full  max-w-screen-md mx-auto px-3 sm:px-4 md:px-6 py-1 md:py-3 relative min-h-screen pb-24">
+    <div className="w-full max-w-screen-md mx-auto px-1.5 sm:px-4 md:px-3 py-1 md:py-3 min-h-screen pb-24">
+      <PullToRefresh onRefresh={async () => {
+        await queryClient.invalidateQueries({ queryKey: ['posts'] });
+      }}>
+      {/* HEADER FIXO */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white mb-2">Feed da Alma</h1>
-        <p className="text-slate-400 text-sm">Conteúdo curado para sua evolução pessoal.</p>
-        
-        <div className="flex gap-2 mt-5 overflow-x-auto pb-2 custom-scrollbar mask-gradient">
-            {trendingTags.map(tag => (
-                <button
-                    key={tag}
-                    onClick={() => handleTagClick(tag)}
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all border ${
-                        selectedTag === tag 
-                        ? 'bg-[#50c878] text-[#1e293b] border-[#50c878]' 
-                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-[#50c878] hover:text-[#50c878]'
-                    }`}
-                >
-                    <Hash size={10} />
-                    {tag}
-                    {selectedTag === tag && <X size={10} className="ml-1" />}
-                </button>
-            ))}
+        <div className="flex gap-2 mt-5 overflow-x-auto pb-2 custom-scrollbar">
+          {trendingTags.map(tag => (
+            <button
+              key={tag}
+              onClick={() => handleTagClick(tag)}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                selectedTag === tag ? 'bg-[#50c878] text-[#1e293b] border-[#50c878]' : 'bg-slate-800 text-slate-400 border-slate-700'
+              }`}
+            >
+              <Hash size={10} /> {tag}
+              {selectedTag === tag && <X size={10} className="ml-1" />}
+            </button>
+          ))}
         </div>
       </div>
 
+      {/* LISTA VIRTUALIZADA */}
       {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-20 text-slate-500">
-            <Loader2 size={40} className="animate-spin mb-4 text-[#50c878]" />
-            <p>Sintonizando frequências...</p>
+        <div className="flex flex-col gap-4">
+          <PostSkeleton />
+          <PostSkeleton />
+          <PostSkeleton />
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
-          {posts.length > 0 ? (
-             posts.map(post => (
-                <PostCard 
-                  key={post.id} 
-                  {...post}
-                  userHasLiked={post.userHasLiked} 
-                  onVibeTransfer={onVibeUpdate}
-                  onTagClick={handleTagClick}
-                />
-              ))
-          ) : (
-              <div className="text-center py-12 bg-slate-800/30 rounded-2xl border border-slate-700/50 border-dashed">
-                  <p className="text-slate-400">Nenhuma vibe encontrada com esta tag.</p>
-                  <button 
-                    onClick={() => setSelectedTag(null)}
-                    className="text-[#50c878] text-sm mt-2 hover:underline"
-                  >
-                      Limpar filtros
-                  </button>
-              </div>
+        <Virtuoso
+          useWindowScroll // Usa o scroll do browser em vez de uma div interna
+          data={allPosts}
+          endReached={() => hasNextPage && fetchNextPage()}
+          itemContent={(index, post) => (
+            <div className="pb-2"> {/* Espaçamento entre posts */}
+              <PostCard 
+                key={post.id} 
+                {...post} 
+                onTagClick={handleTagClick}
+                onClick={() => setSelectedPost(post)}
+              />
+            </div>
           )}
-        </div>
-      )}
-      
-      {!isLoading && posts.length > 0 && (
-        <div className="py-12 text-center text-slate-500 text-xs italic">
-            Você chegou ao fim da sua dose diária de serenidade.
-        </div>
+          components={{
+            Footer: () => (
+              <div className="py-10 flex flex-col items-center justify-center">
+                {isFetchingNextPage ? (
+                  <PostSkeleton />
+                ) : !hasNextPage && allPosts.length > 0 ? (
+                  <p className="text-slate-500 text-xs italic">Você chegou ao fim da sua dose de serenidade.</p>
+                ) : null}
+              </div>
+            )
+          }}
+        />
       )}
 
+      {/* FAB - Botão Flutuante */}
       <Link 
         to="/create"
-        className="fixed bottom-24 md:bottom-32 xl:bottom-10 right-6 md:right-10 bg-[#50c878] hover:bg-[#50c878]/90 text-[#1e293b] p-4 rounded-full shadow-[0_0_20px_rgba(80,200,120,0.4)] transition-all hover:scale-110 active:scale-95 z-50 flex items-center justify-center"
-        aria-label="Criar nova vibe"
+        className="fixed bottom-24 md:bottom-10 right-6 bg-[#50c878] text-[#1e293b] p-4 rounded-full shadow-lg hover:scale-110 transition-transform z-50"
       >
         <Plus size={28} strokeWidth={3} />
       </Link>
+
+      </PullToRefresh>
+
+      {selectedPost && (
+        <PostDetailModal 
+            post={selectedPost} 
+            onClose={() => setSelectedPost(null)} 
+        />
+      )}
     </div>
   );
 };

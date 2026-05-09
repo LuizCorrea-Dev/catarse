@@ -6,6 +6,8 @@ import {
   Lock, Mail, Phone, Bell, Shield, Users, UserPlus, UserCheck, Heart, Grid, Building2, User, Clock, ArrowRight, UserMinus, Upload, Plus, Sparkles, Hash, Globe, EyeOff, Eye, Bookmark, LayoutGrid, List, ChevronLeft, Check, Smartphone, Flag, Power, Maximize2, Crown, AlertOctagon, Filter, CheckCircle, Menu, Share2, Copy
 } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { VirtuosoGrid } from 'react-virtuoso';
 import { supabase } from '../backend/supabase';
 import { transactionService } from '../backend/TransactionService';
 import { postService, Post, CreatePostData } from '../backend/PostService';
@@ -14,6 +16,7 @@ import { communityService, Community, RoleType } from '../backend/CommunityServi
 import { connectionService, Friend } from '../backend/ConnectionService';
 import { AtrioModal, CreateAtrioModal } from './AtrioLeveza'; 
 import PostCard from '../components/PostCard';
+import VibeCelebration from '../components/VibeCelebration';
 
 interface UserProfileProps {
   onLogout?: () => void;
@@ -39,43 +42,92 @@ type Connection = Friend;
 
 const UserProfile: React.FC<UserProfileProps> = ({ onLogout }) => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'posts' | 'atrio' | 'groups' | 'following' | 'connections'>('posts');
   const [networkSubTab, setNetworkSubTab] = useState<'following' | 'followers'>('following');
   const [connectionsSubTab, setConnectionsSubTab] = useState<'friends' | 'pending'>('friends');
   const [atrioSubTab, setAtrioSubTab] = useState<'created' | 'saved'>('created');
+
+  // --- QUERIES ---
   
-  const [userBalance, setUserBalance] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  
-  const [userPosts, setUserPosts] = useState<Post[]>([]);
-  const [atrioPosts, setAtrioPosts] = useState<AtrioItem[]>([]);
-  const [sanctuaryLists, setSanctuaryLists] = useState<AtrioList[]>([]);
-  const [userGroups, setUserGroups] = useState<Community[]>([]);
-  
-  const [userData, setUserData] = useState<UserData>({
-      id: '',
-      name: '',
-      username: '',
-      status: '',
-      bio: '',
-      email: '',
-      phone: '',
-      countryCode: '+55',
-      avatarUrl: '',
-      bannerUrl: '',
-      notifications: true,
-      isSuspended: false
+  // 1. Perfil do Usuário
+  const { data: userDataProfile } = useQuery({
+    queryKey: ['profile', 'current_user'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Não logado");
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      return {
+          id: user.id,
+          name: profile.full_name || 'Usuário',
+          username: profile.username || 'usuario',
+          status: profile.status || 'Em busca de equilíbrio.',
+          bio: profile.bio || '',
+          email: user.email || '',
+          phone: profile.phone || '', 
+          countryCode: profile.country_code || '+55',
+          avatarUrl: profile.avatar_url || 'https://picsum.photos/200',
+          bannerUrl: profile.banner_url || 'https://picsum.photos/800/300',
+          notifications: true,
+          isSuspended: profile.is_suspended || false,
+          lastUsernameChange: profile.last_username_change,
+          vibes: profile.vibes || 0
+      };
+    }
   });
 
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [pendingConnections, setPendingConnections] = useState<Connection[]>([]);
-  const [following, setFollowing] = useState<Connection[]>([]);
-  const [followers, setFollowers] = useState<Connection[]>([]);
+  // 2. Posts do Usuário
+  const { data: userPosts = [], isLoading: isLoadingPosts } = useQuery({
+    queryKey: ['userPosts', 'current_user'],
+    queryFn: () => postService.getUserPosts('current_user', 'post')
+  });
 
-  // Modals
+  // 3. Itens do Átrio
+  const { data: atrioPosts = [] } = useQuery({
+    queryKey: ['userAtrio', 'current_user'],
+    queryFn: () => atrioService.getUserItems('current_user')
+  });
+
+  // 4. Listas (Santuários)
+  const { data: sanctuaryLists = [] } = useQuery({
+    queryKey: ['userLists'],
+    queryFn: () => atrioService.getLists()
+  });
+
+  // 5. Grupos
+  const { data: userGroups = [] } = useQuery({
+    queryKey: ['userGroups', 'current_user'],
+    queryFn: () => communityService.getUserCommunities('current_user')
+  });
+
+  // 6. Conexões (Rede)
+  const { data: followers = [] } = useQuery({
+    queryKey: ['followers', 'current_user'],
+    queryFn: () => connectionService.getFollowers('current_user')
+  });
+  const { data: following = [] } = useQuery({
+    queryKey: ['following', 'current_user'],
+    queryFn: () => connectionService.getFollowing('current_user')
+  });
+  const { data: connections = [] } = useQuery({
+    queryKey: ['friends', 'current_user'],
+    queryFn: () => connectionService.getFriends('current_user')
+  });
+  const { data: pendingConnections = [] } = useQuery({
+    queryKey: ['pending', 'current_user'],
+    queryFn: () => connectionService.getPendingRequests('current_user')
+  });
+
+  const isLoading = !userDataProfile || isLoadingPosts;
+  const userData = userDataProfile || {
+      id: '', name: '', username: '', status: '', bio: '', email: '', phone: '', countryCode: '+55', avatarUrl: '', bannerUrl: '', notifications: true, isSuspended: false
+  };
+  const userBalance = userDataProfile?.vibes || 0;
+
+  // --- UI STATE (Modals, Sub-tabs, etc.) ---
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [editPost, setEditPost] = useState<Post | null>(null);
-  const [viewingPost, setViewingPost] = useState<Post | null>(null); // New state for viewing post details
+  const [viewingPost, setViewingPost] = useState<Post | null>(null);
   const [editAtrio, setEditAtrio] = useState<AtrioItem | null>(null);
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
   const [isCreateAtrioOpen, setIsCreateAtrioOpen] = useState(false);
@@ -85,68 +137,17 @@ const UserProfile: React.FC<UserProfileProps> = ({ onLogout }) => {
   const [confirmData, setConfirmData] = useState<{ isOpen: boolean, type: 'delete_connection' | 'unfollow' | 'delete_list', targetId: string, message: string }>({ 
       isOpen: false, type: 'unfollow', targetId: '', message: '' 
   });
-  
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-          const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-          if (profile) {
-              setUserData({
-                  id: user.id,
-                  name: profile.full_name || 'Usuário',
-                  username: profile.username || 'usuario',
-                  status: profile.status || 'Em busca de equilíbrio.',
-                  bio: profile.bio || '',
-                  email: user.email || '',
-                  phone: profile.phone || '', 
-                  countryCode: profile.country_code || '+55',
-                  avatarUrl: profile.avatar_url || 'https://picsum.photos/200',
-                  bannerUrl: profile.banner_url || 'https://picsum.photos/800/300',
-                  notifications: true,
-                  isSuspended: profile.is_suspended || false,
-                  lastUsernameChange: profile.last_username_change
-              });
-              setUserBalance(profile.vibes || 0);
-          }
-      }
-
-      const posts = await postService.getUserPosts('current_user', 'post');
-      const atrioItems = await atrioService.getUserItems('current_user');
-      const groups = await communityService.getUserCommunities('current_user');
-      const lists = await atrioService.getLists();
-      
-      const myFollowers = await connectionService.getFollowers('current_user'); 
-      const myFollowing = await connectionService.getFollowing('current_user'); 
-      const myFriends = await connectionService.getFriends('current_user');     
-      const myPending = await connectionService.getPendingRequests('current_user'); 
-
-      setUserPosts(posts);
-      setAtrioPosts(atrioItems);
-      setUserGroups(groups);
-      setSanctuaryLists(lists);
-      
-      setFollowers(myFollowers);
-      setFollowing(myFollowing);
-      setConnections(myFriends); 
-      setPendingConnections(myPending);
-      
-      setIsLoading(false);
-    };
-    loadData();
-  }, []);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [isDew, setIsDew] = useState(false);
+  const [rewardMessage, setRewardMessage] = useState('');
 
   const handleFollowBack = async (id: string) => {
-      const res = await transactionService.processFollowTransaction('current_user', id);
+      const res = await transactionService.processFollow(id);
       if (res.success) {
           alert("Agora você segue de volta!");
-          setFollowers(prev => prev.map(f => f.id === id ? { ...f, isFollowing: true } : f));
-          const newFollowing = await connectionService.getFollowing('current_user');
-          setFollowing(newFollowing);
+          queryClient.invalidateQueries({ queryKey: ['followers'] });
+          queryClient.invalidateQueries({ queryKey: ['following'] });
       } else {
           alert(res.message);
       }
@@ -156,7 +157,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ onLogout }) => {
       const res = await connectionService.requestFriendship(id);
       if (res.success) {
           alert("Solicitação de amizade enviada!");
-          setFollowing(prev => prev.map(f => f.id === id ? { ...f, friendshipStatus: 'pending_sent' } : f));
+          queryClient.invalidateQueries({ queryKey: ['following'] });
       } else {
           alert(res.message);
       }
@@ -183,11 +184,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ onLogout }) => {
       const { error } = await supabase.from('profiles').update(updates).eq('id', user.id);
 
       if (!error) {
-          setUserData(prev => ({ 
-              ...prev, 
-              ...updatedData, 
-              lastUsernameChange: updates.last_username_change || prev.lastUsernameChange 
-          }));
+          queryClient.invalidateQueries({ queryKey: ['profile'] });
           alert("Perfil atualizado com sucesso!");
       } else {
           console.error("Erro ao atualizar perfil:", JSON.stringify(error));
@@ -203,12 +200,8 @@ const UserProfile: React.FC<UserProfileProps> = ({ onLogout }) => {
   const handleAcceptConnection = async (id: string) => {
       const success = await connectionService.acceptFriendship(id);
       if (success) {
-          const acceptedFriend = pendingConnections.find(p => p.id === id);
-          if (acceptedFriend) {
-              const newFriend = { ...acceptedFriend, friendshipStatus: 'accepted' as 'accepted' };
-              setConnections(prev => [...prev, newFriend]);
-              setPendingConnections(prev => prev.filter(p => p.id !== id));
-          }
+          queryClient.invalidateQueries({ queryKey: ['friends'] });
+          queryClient.invalidateQueries({ queryKey: ['pending'] });
           alert("Conexão aceita!");
       } else {
           alert("Erro ao aceitar conexão.");
@@ -238,60 +231,77 @@ const UserProfile: React.FC<UserProfileProps> = ({ onLogout }) => {
   const handleConfirmAction = async () => {
       if (confirmData.type === 'delete_list') {
           await atrioService.deleteList(confirmData.targetId);
-          setSanctuaryLists(prev => prev.filter(l => l.id !== confirmData.targetId));
+          queryClient.invalidateQueries({ queryKey: ['userLists'] });
       } else if (confirmData.type === 'unfollow') {
-          await transactionService.processUnfollowTransaction('current_user', confirmData.targetId);
-          setFollowing(prev => prev.filter(f => f.id !== confirmData.targetId));
+          await transactionService.processUnfollow(confirmData.targetId);
+          queryClient.invalidateQueries({ queryKey: ['following'] });
       }
       setConfirmData({ ...confirmData, isOpen: false });
   };
 
   const handleSavePost = async (id: string, content: string, tags: string[], mediaUrl?: string) => { 
       await postService.updatePost(id, content, tags, mediaUrl); 
-      const updatedPosts = await postService.getUserPosts('current_user', 'post'); 
-      setUserPosts(updatedPosts); 
+      queryClient.invalidateQueries({ queryKey: ['userPosts'] });
       setEditPost(null); 
       setViewingPost(null); // Close view modal if open
   };
 
   const handleDeletePost = async (id: string) => { 
       await postService.deletePost(id); 
-      setUserPosts(prev => prev.filter(p => p.id !== id)); 
+      queryClient.invalidateQueries({ queryKey: ['userPosts'] });
       setEditPost(null); 
       setViewingPost(null); // Close view modal if open
   };
   
   const handleSaveAtrio = async (id: any, updates: Partial<AtrioItem>) => { 
       await atrioService.updateItem(id, updates); 
-      const updatedAtrio = await atrioService.getUserItems('current_user'); 
-      setAtrioPosts(updatedAtrio); 
+      queryClient.invalidateQueries({ queryKey: ['userAtrio'] });
       setEditAtrio(null); 
   };
   const handleDeleteAtrio = async (id: any) => { 
       await atrioService.deleteItem(id); 
-      setAtrioPosts(prev => prev.filter(i => i.id !== id)); 
+      queryClient.invalidateQueries({ queryKey: ['userAtrio'] });
       setEditAtrio(null); 
   };
 
   const handleCreatePost = async (data: CreatePostData) => { 
       await postService.createPost(data); 
-      await transactionService.processPostCreationVibe('current_user'); 
-      const updatedPosts = await postService.getUserPosts('current_user', 'post'); 
-      setUserPosts(updatedPosts); 
+      const vibeResult = await transactionService.processPostCreationVibe('current_user'); 
+      queryClient.invalidateQueries({ queryKey: ['userPosts'] });
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+      queryClient.invalidateQueries({ queryKey: ['balance'] });
+
+      if (vibeResult.dewCollected) {
+          setRewardMessage(vibeResult.message);
+          setIsDew(true);
+          setShowCelebration(true);
+      }
       setIsCreatePostOpen(false); 
   };
 
-  const handleCreateAtrio = async (item: Omit<AtrioItem, 'id' | 'vibes' | 'authorId'>) => { await atrioService.addItem(item); const updatedAtrio = await atrioService.getUserItems('current_user'); setAtrioPosts(updatedAtrio); setIsCreateAtrioOpen(false); };
+  const handleCreateAtrio = async (item: Omit<AtrioItem, 'id' | 'vibes' | 'authorId'>) => { 
+      await atrioService.addItem(item); 
+      const vibeResult = await transactionService.processAtrioPublicationVibe();
+      queryClient.invalidateQueries({ queryKey: ['userAtrio'] });
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+      queryClient.invalidateQueries({ queryKey: ['balance'] });
+
+      if (vibeResult.dewCollected) {
+          setRewardMessage(vibeResult.message);
+          setIsDew(true);
+          setShowCelebration(true);
+      }
+      setIsCreateAtrioOpen(false); 
+  };
   
   const handleCreateList = async (name: string, description: string, tags: string[]) => { 
-      const newList = await atrioService.createList(name, description, tags); 
-      setSanctuaryLists(prev => [...prev, newList]); 
+      await atrioService.createList(name, description, tags); 
+      queryClient.invalidateQueries({ queryKey: ['userLists'] });
       setIsCreateListOpen(false); 
   };
   const handleEditList = async (id: string, name: string, description: string, tags: string[]) => { 
       await atrioService.updateList(id, { name, description, tags }); 
-      const updatedLists = await atrioService.getLists(); 
-      setSanctuaryLists(updatedLists); 
+      queryClient.invalidateQueries({ queryKey: ['userLists'] });
       setEditingList(null); 
   };
   
@@ -301,6 +311,12 @@ const UserProfile: React.FC<UserProfileProps> = ({ onLogout }) => {
 
   return (
     <div className="w-full max-w-5xl mx-auto px-4 py-8 pb-24 overflow-x-hidden">
+      <VibeCelebration 
+        show={showCelebration} 
+        message={rewardMessage} 
+        isDew={isDew} 
+        onComplete={() => setShowCelebration(false)} 
+      />
       
       {/* Header Profile Section - (No changes) */}
       <div className={`bg-[#1e293b] rounded-3xl overflow-hidden border border-slate-700 mb-8 relative shadow-xl ${userData.isSuspended ? 'grayscale opacity-75' : ''}`}>
@@ -546,19 +562,26 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; icon: any; lab
 // --- NEW POSTS GRID ---
 const PostsGrid: React.FC<{ posts: Post[]; onView: (post: Post) => void; onCreate: () => void }> = ({ posts, onView, onCreate }) => (
     <div className="space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {/* Create New Post Card */}
-            <div 
-                onClick={onCreate} 
-                className="aspect-square rounded-xl border-2 border-dashed border-slate-700 hover:border-[#50c878] flex flex-col items-center justify-center cursor-pointer group bg-slate-800/30 transition-all hover:bg-slate-800/50"
-            >
-                <div className="p-4 rounded-full bg-slate-800 group-hover:bg-[#50c878]/20 text-slate-400 group-hover:text-[#50c878] transition-colors mb-2 shadow-lg">
-                    <Plus size={32} />
-                </div>
-                <span className="text-sm font-bold text-slate-400 group-hover:text-white transition-colors">Novo Post</span>
-            </div>
-
-            {posts.map(post => (
+        <div className="h-[60vh] min-h-[400px]">
+          <VirtuosoGrid
+            totalCount={posts.length + 1}
+            listClassName="grid grid-cols-2 md:grid-cols-3 gap-4"
+            itemContent={(index) => {
+              if (index === 0) {
+                return (
+                  <div 
+                      onClick={onCreate} 
+                      className="aspect-square rounded-xl border-2 border-dashed border-slate-700 hover:border-[#50c878] flex flex-col items-center justify-center cursor-pointer group bg-slate-800/30 transition-all hover:bg-slate-800/50"
+                  >
+                      <div className="p-4 rounded-full bg-slate-800 group-hover:bg-[#50c878]/20 text-slate-400 group-hover:text-[#50c878] transition-colors mb-2 shadow-lg">
+                          <Plus size={32} />
+                      </div>
+                      <span className="text-sm font-bold text-slate-400 group-hover:text-white transition-colors">Novo Post</span>
+                  </div>
+                );
+              }
+              const post = posts[index - 1];
+              return (
                 <div key={post.id} onClick={() => onView(post)} className="aspect-square group relative overflow-hidden rounded-xl bg-slate-200 dark:bg-slate-800 border border-slate-700/50 cursor-pointer">
                     {post.mediaUrl ? (
                         <img alt="Post content" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" src={post.mediaUrl} />
@@ -572,7 +595,9 @@ const PostsGrid: React.FC<{ posts: Post[]; onView: (post: Post) => void; onCreat
                         <span className="flex items-center gap-1"><MessageCircle size={16} fill="currentColor" /> {post.totalComments}</span>
                     </div>
                 </div>
-            ))}
+              );
+            }}
+          />
         </div>
         {posts.length === 0 && <div className="text-center py-10 text-slate-500 col-span-full">Seu diário está vazio.</div>}
     </div>

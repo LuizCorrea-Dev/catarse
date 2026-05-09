@@ -51,9 +51,25 @@ import {
   CommunityMember,
   RoleType,
 } from "../backend/CommunityService";
+import {
+  atrioService,
+  AtrioItem,
+  AtrioList,
+} from "../backend/AtrioService";
 import PostCard from "../components/PostCard";
+import PostSkeleton from "../components/PostSkeleton";
 import { postService, Post } from "../backend/PostService";
 import { supabase } from "../backend/supabase";
+import { transactionService } from "../backend/TransactionService";
+import { chatService } from "../backend/ChatService";
+import {
+  useQuery,
+  useMutation,
+  useInfiniteQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { Virtuoso } from "react-virtuoso";
+import VibeCelebration from "../components/VibeCelebration";
 
 interface CommunityViewProps {
   onVibeUpdate?: (newBalance: number) => void;
@@ -732,26 +748,46 @@ const FeedChannelView: React.FC<{
   onVibeUpdate,
   isMember,
 }) => {
-  const [posts, setPosts] = useState<Post[]>([]);
+  const queryClient = useQueryClient();
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [isDew, setIsDew] = useState(false);
+  const [rewardMessage, setRewardMessage] = useState('');
 
-  const fetchPosts = async () => {
-    const data = await postService.getPosts(undefined, communityId);
-    setPosts(data);
-  };
+  // 1. Infinite Query for Community Posts
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading
+  } = useInfiniteQuery({
+    queryKey: ['communityPosts', communityId],
+    queryFn: ({ pageParam = 0 }) => postService.getPosts(undefined, communityId, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => lastPage.length === 20 ? allPages.length : undefined,
+  });
+
+  const allPosts = data?.pages.flat() || [];
 
   const handlePin = async (postId: string, newStatus: boolean) => {
     await postService.togglePin(postId, newStatus);
-    fetchPosts(); // Refresh to re-sort
+    queryClient.invalidateQueries({ queryKey: ['communityPosts', communityId] });
   };
 
-  useEffect(() => {
-    fetchPosts();
-  }, [communityId]);
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['communityPosts', communityId] });
+  };
 
   return (
-    <div className="min-h-full p-4 custom-scrollbar pb-24">
-      <div className="max-w-2xl mx-auto space-y-4">
-        <div className="bg-slate-800/50 rounded-xl p-4 text-center border border-slate-700 border-dashed mb-4">
+    <div className="h-full flex flex-col p-4 custom-scrollbar">
+      <VibeCelebration 
+        show={showCelebration} 
+        message={rewardMessage} 
+        isDew={isDew} 
+        onComplete={() => setShowCelebration(false)} 
+      />
+      <div className="max-w-2xl mx-auto w-full space-y-4 flex-1 flex flex-col">
+        <div className="bg-slate-800/50 rounded-xl p-4 text-center border border-slate-700 border-dashed mb-4 shrink-0">
           <h3 className="text-white font-bold mb-1">Mural de Avisos</h3>
           <p className="text-slate-400 text-sm">
             Este mural é exclusivo desta comunidade.
@@ -759,24 +795,59 @@ const FeedChannelView: React.FC<{
         </div>
 
         {isMember && (
-          <CommunityPostInput communityId={communityId} onPosted={fetchPosts} />
+          <div className="shrink-0 mb-4">
+            <CommunityPostInput 
+                communityId={communityId} 
+                onPosted={handleRefresh} 
+                onDewCollected={(msg) => {
+                    setRewardMessage(msg);
+                    setIsDew(true);
+                    setShowCelebration(true);
+                }}
+            />
+          </div>
         )}
 
-        {posts.map((post) => (
-          <PostCard
-            key={post.id}
-            {...post}
-            userHasLiked={post.userHasLiked}
-            canDelete={canModeratorDelete}
-            onDelete={fetchPosts}
-            onVibeTransfer={onVibeUpdate}
-            canPin={canModeratorDelete}
-            isPinned={post.isPinned}
-            onPin={handlePin}
-          />
-        ))}
-
-        {posts.length === 0 && (
+        {isLoading ? (
+          <div className="flex flex-col gap-4">
+            <PostSkeleton />
+            <PostSkeleton />
+          </div>
+        ) : allPosts.length > 0 ? (
+          <div className="flex-1 min-h-0">
+            <Virtuoso
+              useWindowScroll={false} // Use the internal scroll of the channel view
+              data={allPosts}
+              endReached={() => hasNextPage && fetchNextPage()}
+              itemContent={(index, post) => (
+                <div className="pb-4">
+                  <PostCard
+                    key={post.id}
+                    {...post}
+                    userHasLiked={post.userHasLiked}
+                    canDelete={canModeratorDelete}
+                    onDelete={handleRefresh}
+                    onVibeTransfer={onVibeUpdate}
+                    canPin={canModeratorDelete}
+                    isPinned={post.isPinned}
+                    onPin={handlePin}
+                  />
+                </div>
+              )}
+              components={{
+                Footer: () => (
+                  <div className="py-10 flex flex-col items-center justify-center">
+                    {isFetchingNextPage ? (
+                      <PostSkeleton />
+                    ) : !hasNextPage && allPosts.length > 0 ? (
+                      <p className="text-slate-500 text-xs italic">Isso é tudo por hoje nesta tribo.</p>
+                    ) : null}
+                  </div>
+                )
+              }}
+            />
+          </div>
+        ) : (
           <div className="text-center text-slate-500 text-sm py-10">
             Nenhum aviso postado ainda. Seja o primeiro!
           </div>
@@ -804,6 +875,29 @@ const ChatChannelView: React.FC<{
       setMessages(msgs);
     };
     load();
+
+    const subscription = chatService.subscribeToChannel(channelId, (newMsg) => {
+        setMessages((prev) => {
+            if (prev.some((m) => m.id === newMsg.id)) return prev;
+            // Map ChatService Message to CommunityMessage if needed or ensure types align
+            // CommunityMessage has: id, userId, userName, userAvatar, content, timestamp, type, mediaUrl
+            // ChatService Message has similar but distinct structure. Mapping needed.
+            return [...prev, {
+                id: newMsg.id,
+                userId: newMsg.senderId,
+                userName: newMsg.senderName,
+                userAvatar: newMsg.senderAvatar,
+                content: newMsg.content,
+                timestamp: new Date(newMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                type: newMsg.type as "text" | "image" | "audio" | "video",
+                mediaUrl: newMsg.mediaUrl
+            }];
+        });
+    });
+
+    return () => {
+        subscription.unsubscribe();
+    };
   }, [channelId]);
 
   useEffect(() => {
@@ -951,13 +1045,15 @@ const ChatChannelView: React.FC<{
 const CommunityPostInput: React.FC<{
   communityId: string;
   onPosted: () => void;
-}> = ({ communityId, onPosted }) => {
+  onDewCollected?: (msg: string) => void;
+}> = ({ communityId, onPosted, onDewCollected }) => {
   const [content, setContent] = useState("");
-  const [isPosting, setIsPosting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentUserAvatar, setCurrentUserAvatar] = useState(
     "https://picsum.photos/seed/user-me/50/50",
   );
+
+  const queryClient = useQueryClient();
 
   // File Upload States
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
@@ -998,44 +1094,62 @@ const CommunityPostInput: React.FC<{
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const uploadMediaToSupabase = async (file: File): Promise<string> => {
-    const fileExt = file.name.split(".").pop();
-    const fileName = `community-posts/${Math.random().toString(36).substring(2)}.${fileExt}`;
-    const { error } = await supabase.storage
-      .from("media")
-      .upload(fileName, file);
-    if (error) throw error;
-    const { data } = supabase.storage.from("media").getPublicUrl(fileName);
-    return data.publicUrl;
-  };
-
-  const handleSubmit = async () => {
-    if (!content.trim() && !mediaFile) return;
-    setIsPosting(true);
-    try {
+  const { mutate: createCommunityPost, isPending: isPosting } = useMutation({
+    mutationFn: async () => {
+      if (!content.trim() && !mediaFile) return;
+      
       let finalMediaUrl = undefined;
       if (mediaFile) {
-        finalMediaUrl = await uploadMediaToSupabase(mediaFile);
+        const fileExt = mediaFile.name.split(".").pop();
+        const fileName = `community-posts/${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const { error } = await supabase.storage
+          .from("media")
+          .upload(fileName, mediaFile);
+        if (error) throw error;
+        const { data } = supabase.storage.from("media").getPublicUrl(fileName);
+        finalMediaUrl = data.publicUrl;
       }
 
-      await postService.createPost({
+      return await postService.createPost({
         userId: "current_user",
         content: content,
         tags: [],
         communityId: communityId,
         mediaUrl: finalMediaUrl,
       });
-
-      setContent("");
-      handleRemoveMedia();
-      setIsPosting(false);
-      setIsExpanded(false);
-      onPosted();
-    } catch (e) {
-      console.error(e);
-      alert("Erro ao publicar.");
-      setIsPosting(false);
+    },
+    onSuccess: (result: any) => {
+      if (result && result.success) {
+        // process vibe reward
+        transactionService.processCommunityNoticeVibe().then((vibeResult) => {
+           if (vibeResult.success) {
+               queryClient.invalidateQueries({ queryKey: ["balance"] });
+               
+               if (vibeResult.dewCollected) {
+                  // Pass data up or handle here. 
+                  // Since CommunityPostInput is separate, we'll need a way to trigger celebration in parent.
+                  // I'll add onDewCollected prop to CommunityPostInput.
+                  onDewCollected?.(vibeResult.message);
+               }
+           }
+        });
+        
+        setContent("");
+        handleRemoveMedia();
+        setIsExpanded(false);
+        queryClient.invalidateQueries({ queryKey: ['communityPosts', communityId] });
+        onPosted();
+      } else if (result) {
+        throw new Error(result.message);
+      }
+    },
+    onError: (error: any) => {
+      alert(error.message || "Erro ao publicar.");
     }
+  });
+
+  const handleSubmit = () => {
+    createCommunityPost();
   };
 
   return (

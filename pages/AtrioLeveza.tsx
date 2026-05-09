@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   X,
   Zap,
@@ -29,7 +30,11 @@ import { atrioService, AtrioItem, AtrioList } from "../backend/AtrioService";
 import { transactionService } from "../backend/TransactionService";
 import { connectionService } from "../backend/ConnectionService";
 import { supabase } from "../backend/supabase";
+import VibeCelebration from "../components/VibeCelebration";
+import VibeButton from "../components/VibeButton";
 import { CreateListModal } from "./UserProfile"; // Import from UserProfile
+import { PullToRefresh } from "../components/PullToRefresh";
+import { VibeManager } from "../components/VibeManager";
 
 export interface AtrioModalProps {
   item: AtrioItem;
@@ -192,8 +197,6 @@ export const AtrioModal: React.FC<AtrioModalProps> = ({
 }) => {
   const navigate = useNavigate();
   const [isZoomed, setIsZoomed] = useState(false);
-  const [animateVibe, setAnimateVibe] = useState(false);
-  const [hasVibed, setHasVibed] = useState(false);
 
   // Estados para Salvar/Santuário
   const [isSaved, setIsSaved] = useState(false);
@@ -219,7 +222,7 @@ export const AtrioModal: React.FC<AtrioModalProps> = ({
   useEffect(() => {
     // Carregar status de Seguidor e Amigo
     if (!isAuthor) {
-      const loadStatus = async () => {
+      const loadStatusNames = async () => {
         const following = await connectionService.getFollowState(item.authorId);
         const friendStatus = await connectionService.getFriendshipStatus(
           item.authorId,
@@ -227,9 +230,22 @@ export const AtrioModal: React.FC<AtrioModalProps> = ({
         setIsFollowing(following);
         setFriendshipStatus(friendStatus);
       };
-      loadStatus();
+      loadStatusNames();
     }
-  }, [item.authorId, isAuthor]);
+
+    // Load saved status immediately
+    const loadSavedStatus = async () => {
+      const lists = await atrioService.getLists();
+      setAvailableLists(lists);
+      const containing = lists
+        .filter((l) => l.itemIds.includes(item.id))
+        .map((l) => l.id);
+      setListsContainingItem(containing);
+    };
+    loadSavedStatus();
+  }, [item.authorId, item.id, isAuthor]);
+
+
 
   // Carrega listas disponíveis quando abre opções de salvar
   useEffect(() => {
@@ -252,19 +268,6 @@ export const AtrioModal: React.FC<AtrioModalProps> = ({
     setIsSaved(listsContainingItem.length > 0);
   }, [listsContainingItem]);
 
-  const handleVibeClick = async () => {
-    setAnimateVibe(true);
-    setTimeout(() => setAnimateVibe(false), 700);
-
-    const res = await transactionService.processDirectDonation(item.authorId);
-
-    if (res.success) {
-      setHasVibed(true);
-      onShowToast("✨ Vibe enviada com sucesso!");
-    } else {
-      onShowToast(res.message);
-    }
-  };
 
   const handleShareClick = async () => {
     const url = window.location.href;
@@ -340,15 +343,13 @@ export const AtrioModal: React.FC<AtrioModalProps> = ({
     e.stopPropagation();
     setIsFollowLoading(true);
     if (isFollowing) {
-      await transactionService.processUnfollowTransaction(
-        "current_user",
+      await transactionService.processUnfollow(
         item.authorId,
       );
       setIsFollowing(false);
       onShowToast("Vibe Restituída");
     } else {
-      const result = await transactionService.processFollowTransaction(
-        "current_user",
+      const result = await transactionService.processFollow(
         item.authorId,
       );
       if (result.success) {
@@ -577,34 +578,16 @@ export const AtrioModal: React.FC<AtrioModalProps> = ({
 
       <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 w-auto animate-fade-in-up">
         <div className="flex items-center gap-1 p-2 bg-[#0f172a]/60 backdrop-blur-xl rounded-full border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.5)] ring-1 ring-white/5 relative">
-          <button
-            onClick={handleVibeClick}
-            disabled={hasVibed}
-            className={`bubbly-button group relative flex items-center gap-3 px-8 py-4 rounded-full transition-all active:scale-95 cursor-pointer border 
-                ${
-                  hasVibed
-                    ? "bg-[#FFC300]/20 text-[#FFC300] border-[#FFC300]/40 cursor-default"
-                    : "bg-[#FFC300]/10 text-slate-300 hover:text-[#FFC300] border-[#FFC300]/20 hover:border-[#FFC300]/40"
-                } 
-                ${animateVibe ? "animate" : ""}
-             `}
-          >
-            <Zap
-              size={24}
-              className={`transition-all ${animateVibe ? "scale-125" : ""}`}
-              fill={hasVibed ? "currentColor" : "none"}
+          
+          <div className="px-2"> {/* Wrapper for sizing if needed */}
+            <VibeManager 
+                entityId={item.id}
+                authorId={item.authorId}
+                initialCount={item.vibes}
+                type="atrio"
+                onVibeSent={() => onShowToast("✨ Vibe enviada com sucesso!")}
             />
-            <span
-              className={`font-bold text-base tracking-wide hidden md:inline ${hasVibed ? "text-[#FFC300]" : ""}`}
-            >
-              {hasVibed ? "Vibe Enviada!" : "Vibe"}
-            </span>
-            {!hasVibed && (
-              <span className="bg-[#1e293b] text-[#FFC300] px-1.5 py-0.5 rounded text-[10px] flex items-center font-mono absolute -top-2 -right-2 border border-[#FFC300]/30 shadow-lg">
-                -1
-              </span>
-            )}
-          </button>
+          </div>
 
           <div className="w-px h-8 bg-white/10 mx-2"></div>
 
@@ -871,112 +854,151 @@ export const CreateAtrioModal: React.FC<CreateAtrioModalProps> = ({
 };
 
 const AtrioLeveza: React.FC = () => {
-  const [items, setItems] = useState<AtrioItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const location = useLocation();
   const [selectedItem, setSelectedItem] = useState<AtrioItem | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false); // Restore state
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  
+  // Celebration Stats
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [isDew, setIsDew] = useState(false);
+  const [rewardMessage, setRewardMessage] = useState('');
 
-  // Check for query param openId
-  const location = useLocation();
+  // 1. Query para os itens do Átrio
+  const { data: items = [], isLoading } = useQuery({
+    queryKey: ['atrioItems'],
+    queryFn: () => atrioService.getItems(),
+    staleTime: 1000 * 60 * 5,
+  });
+
+  // 2. Mutation para criar novo item
+  const { mutate: createAtrioItem } = useMutation({
+    mutationFn: (newItemData: Omit<AtrioItem, "id" | "vibes" | "authorId">) => 
+      atrioService.addItem(newItemData),
+    onSuccess: async (result) => {
+      queryClient.invalidateQueries({ queryKey: ['atrioItems'] });
+      
+      // Process Vibe reward for Atrio publication
+      const vibeResult = await transactionService.processAtrioPublicationVibe();
+      if (vibeResult.success) {
+        queryClient.invalidateQueries({ queryKey: ['balance'] });
+        
+        if (vibeResult.dewCollected) {
+          setRewardMessage(vibeResult.message);
+          setIsDew(true);
+          setShowCelebration(true);
+        } else {
+          setToastMessage(vibeResult.message);
+        }
+      } else {
+        setToastMessage("✨ Contemplação adicionada ao Átrio!");
+      }
+      
+      setIsCreateModalOpen(false);
+    },
+    onError: (error: any) => {
+      alert(error.message || "Erro ao criar contemplação.");
+    }
+  });
 
   useEffect(() => {
-    const load = async () => {
-      setIsLoading(true);
-      const data = await atrioService.getItems();
-      setItems(data);
-      setIsLoading(false);
-
-      // Handle URL query param for opening specific item
-      const params = new URLSearchParams(location.search);
-      const openId = params.get("openId");
-      if (openId) {
-        const item = data.find((i) => i.id === openId);
-        if (item) setSelectedItem(item);
-      }
-    };
-    load();
-  }, [location.search]);
+    // Handle URL query param for opening specific item
+    const params = new URLSearchParams(location.search);
+    const openId = params.get("openId");
+    if (openId && items.length > 0) {
+      const item = items.find((i) => i.id === openId);
+      if (item) setSelectedItem(item);
+    }
+  }, [location.search, items]);
 
   const handleCreateItem = async (
     newItemData: Omit<AtrioItem, "id" | "vibes" | "authorId">,
   ) => {
-    const savedItem = await atrioService.addItem(newItemData);
-    setItems((prev) => [savedItem, ...prev]);
-    setIsCreateModalOpen(false);
+    createAtrioItem(newItemData);
   };
 
   return (
     <div className="min-h-screen pb-24 px-4 py-6 md:px-8">
-      <div className="mb-8 text-center">
-        <h1 className="text-3xl font-bold text-white mb-2">Átrio da Leveza</h1>
-        <p className="text-slate-400">Contemple a arte e eleve sua vibração.</p>
-      </div>
-
-      {isLoading ? (
-        <div className="flex justify-center py-20">
-          <Loader2 className="animate-spin text-[#50c878]" size={40} />
+      <PullToRefresh onRefresh={async () => {
+        await queryClient.invalidateQueries({ queryKey: ['atrioItems'] });
+      }}>
+        <VibeCelebration 
+          show={showCelebration} 
+          message={rewardMessage} 
+          isDew={isDew} 
+          onComplete={() => setShowCelebration(false)} 
+        />
+        <div className="mb-8 text-center">
+          <h1 className="text-3xl font-bold text-white mb-2">Átrio da Leveza</h1>
+          <p className="text-slate-400">Contemple a arte e eleve sua vibração.</p>
         </div>
-      ) : (
-        <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              onClick={() => setSelectedItem(item)}
-              className="relative group rounded-xl overflow-hidden cursor-pointer break-inside-avoid"
-            >
-              <img
-                src={item.url}
-                alt={item.title}
-                className="w-full h-auto object-cover transition-transform duration-500 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
-                <h3 className="text-white font-bold text-sm truncate">
-                  {item.title}
-                </h3>
-                <p className="text-slate-300 text-xs truncate">
-                  by {item.authorName}
-                </p>
+
+        {isLoading ? (
+          <div className="flex justify-center py-20">
+            <Loader2 className="animate-spin text-[#50c878]" size={40} />
+          </div>
+        ) : (
+          <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
+            {items.map((item) => (
+              <div
+                key={item.id}
+                onClick={() => setSelectedItem(item)}
+                className="relative group rounded-xl overflow-hidden cursor-pointer break-inside-avoid"
+              >
+                <img
+                  src={item.url}
+                  alt={item.title}
+                  className="w-full h-auto object-cover transition-transform duration-500 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
+                  <h3 className="text-white font-bold text-sm truncate">
+                    {item.title}
+                  </h3>
+                  <p className="text-slate-300 text-xs truncate">
+                    by {item.authorName}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
-          {items.length === 0 && (
-            <div className="col-span-full text-center text-slate-500 py-10">
-              O Átrio está vazio no momento.
-            </div>
-          )}
-        </div>
-      )}
+            ))}
+            {items.length === 0 && (
+              <div className="col-span-full text-center text-slate-500 py-10">
+                O Átrio está vazio no momento.
+              </div>
+            )}
+          </div>
+        )}
 
-      {selectedItem && (
-        <AtrioModal
-          item={selectedItem}
-          onClose={() => setSelectedItem(null)}
-          onShowToast={(msg) => setToastMessage(msg)}
-        />
-      )}
+        {selectedItem && (
+          <AtrioModal
+            item={selectedItem}
+            onClose={() => setSelectedItem(null)}
+            onShowToast={(msg) => setToastMessage(msg)}
+          />
+        )}
 
-      {toastMessage && (
-        <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
-      )}
+        {toastMessage && (
+          <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
+        )}
 
-      {isCreateModalOpen && (
-        <CreateAtrioModal
-          onClose={() => setIsCreateModalOpen(false)}
-          onCreate={handleCreateItem}
-        />
-      )}
+        {isCreateModalOpen && (
+          <CreateAtrioModal
+            onClose={() => setIsCreateModalOpen(false)}
+            onCreate={handleCreateItem}
+          />
+        )}
 
-      {!selectedItem && (
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="fixed bottom-28 md:bottom-32 xl:bottom-10 right-6 md:right-10 bg-[#50c878] hover:bg-[#50c878]/90 text-[#1e293b] p-4 rounded-full shadow-[0_0_20px_rgba(80,200,120,0.4)] transition-all hover:scale-110 active:scale-95 z-[1000] flex items-center justify-center cursor-pointer"
-          aria-label="Adicionar ao Átrio"
-          title="Nova Contemplação"
-        >
-          <Plus size={28} strokeWidth={3} />
-        </button>
-      )}
+        {!selectedItem && (
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="fixed bottom-28 md:bottom-32 xl:bottom-10 right-6 md:right-10 bg-[#50c878] hover:bg-[#50c878]/90 text-[#1e293b] p-4 rounded-full shadow-[0_0_20px_rgba(80,200,120,0.4)] transition-all hover:scale-110 active:scale-95 z-[1000] flex items-center justify-center cursor-pointer"
+            aria-label="Adicionar ao Átrio"
+            title="Nova Contemplação"
+          >
+            <Plus size={28} strokeWidth={3} />
+          </button>
+        )}
+      </PullToRefresh>
     </div>
   );
 };

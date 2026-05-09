@@ -27,7 +27,7 @@ class AtrioService {
   public async getItems(): Promise<AtrioItem[]> {
     const { data, error } = await supabase
       .from("atrio_items")
-      .select("*, profiles(username, avatar_url)")
+      .select("*, vibes_count, profiles(username, avatar_url)")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -54,7 +54,7 @@ class AtrioService {
 
     const { data, error } = await supabase
       .from("atrio_items")
-      .select("*, profiles(username, avatar_url)")
+      .select("*, vibes_count, profiles(username, avatar_url)")
       .in("id", ids);
 
     if (error) return [];
@@ -84,7 +84,7 @@ class AtrioService {
 
     const { data, error } = await supabase
       .from("atrio_items")
-      .select("*, profiles(username, avatar_url)")
+      .select("*, vibes_count, profiles(username, avatar_url)")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
@@ -305,6 +305,19 @@ class AtrioService {
 
   public getListsContainingItem(itemId: any): string[] {
     return [];
+  }
+
+  public async incrementVibes(itemId: string): Promise<void> {
+    const { error } = await supabase.rpc("increment_atrio_vibes", {
+      item_id: itemId,
+    });
+    if (error) {
+      // Fallback if RPC doesn't exist yet or fails
+      await supabase
+        .from("atrio_items")
+        .update({ vibes_count: supabase.rpc("increment", { row_count: 1 }) })
+        .eq("id", itemId);
+    }
   }
 }
 

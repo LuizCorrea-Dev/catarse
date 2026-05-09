@@ -2,249 +2,163 @@ import { supabase } from "./supabase";
 
 export interface TransactionResult {
   success: boolean;
-  donorBalance: number;
-  authorBalance: number;
+  newBalance: number;
   message: string;
+  dewCollected?: boolean;
 }
 
 class TransactionService {
-  public async processPostCreationVibe(
-    userId: string,
-  ): Promise<{ newBalance: number }> {
-    const { data, error } = await supabase.rpc("mine_vibe");
-    if (error) {
-      console.error("Erro na mineração:", error);
-      return { newBalance: 0 };
-    }
-    return { newBalance: (data as any).new_balance };
-  }
-
-  public async processLikeTransaction(
-    targetId: string,
-    donorId: string,
-    authorId: string,
-    type: "post" | "comment" = "post",
-  ): Promise<TransactionResult> {
-    const rpcParams: any = {
-      recipient_id: authorId,
-      amount: 1,
-    };
-
-    if (type === "post") {
-      rpcParams.post_id = targetId;
-    } else {
-      rpcParams.comment_id = targetId;
-    }
-
-    const { data, error } = await supabase.rpc("transfer_vibe", rpcParams);
-
-    if (error) {
-      return {
-        success: false,
-        donorBalance: 0,
-        authorBalance: 0,
-        message: error.message,
-      };
-    }
-
-    const result = data as any;
-    if (!result.success) {
-      return {
-        success: false,
-        donorBalance: 0,
-        authorBalance: 0,
-        message: result.message,
-      };
-    }
-
-    return {
-      success: true,
-      donorBalance: result.new_balance,
-      authorBalance: 0,
-      message: "VIBE enviada com sucesso!",
-    };
-  }
-
-  public async processDirectDonation(
-    recipientId: string,
-    amount: number = 1,
-  ): Promise<TransactionResult> {
-    const { data, error } = await supabase.rpc("transfer_vibe", {
-      recipient_id: recipientId,
-      amount: amount,
-    });
-
-    if (error) {
-      return {
-        success: false,
-        donorBalance: 0,
-        authorBalance: 0,
-        message: error.message,
-      };
-    }
-
-    const result = data as any;
-    if (!result.success) {
-      return {
-        success: false,
-        donorBalance: 0,
-        authorBalance: 0,
-        message: result.message,
-      };
-    }
-
-    return {
-      success: true,
-      donorBalance: result.new_balance,
-      authorBalance: 0,
-      message: "Vibe transferida!",
-    };
-  }
-
-  public async processFollowTransaction(
-    followerId: string,
-    targetId: string,
-  ): Promise<TransactionResult> {
-    const { data, error } = await supabase.rpc("follow_user", {
-      target_id: targetId,
-    });
-
-    if (error) {
-      console.error("Follow error:", JSON.stringify(error));
-      return {
-        success: false,
-        donorBalance: 0,
-        authorBalance: 0,
-        message: error.message,
-      };
-    }
-
-    const result = data as any;
-    if (!result.success) {
-      return {
-        success: false,
-        donorBalance: 0,
-        authorBalance: 0,
-        message: result.message,
-      };
-    }
-
-    return {
-      success: true,
-      donorBalance: result.new_balance,
-      authorBalance: 0,
-      message: "Você seguiu os passos! 1 Vibe transferida.",
-    };
-  }
-
-  public async processUnfollowTransaction(
-    followerId: string,
-    targetId: string,
-  ): Promise<TransactionResult> {
-    const { data, error } = await supabase.rpc("unfollow_user", {
-      target_id: targetId,
-    });
-
-    if (error) {
-      console.error("Unfollow error:", JSON.stringify(error));
-      return {
-        success: false,
-        donorBalance: 0,
-        authorBalance: 0,
-        message: error.message,
-      };
-    }
-
-    const result = data as any;
-    if (!result.success) {
-      return {
-        success: false,
-        donorBalance: 0,
-        authorBalance: 0,
-        message: result.message,
-      };
-    }
-
-    return {
-      success: true,
-      donorBalance: result.new_balance,
-      authorBalance: 0,
-      message: "Vibe restituída.",
-    };
-  }
-
-  public async processRefund(
-    contentId: string,
-    authorId: string,
-  ): Promise<number> {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (user) return await this.getBalance(user.id);
-    return 0;
-  }
-
-  public async processCommentTransaction(
-    postId: string,
-    commentatorId: string,
-    authorId: string,
-    text: string,
-  ): Promise<TransactionResult> {
-    if (text.length < 5)
-      return {
-        success: false,
-        donorBalance: 0,
-        authorBalance: 0,
-        message: "Comentário muito curto.",
-      };
-
-    const { data, error } = await supabase.rpc("transfer_vibe", {
-      recipient_id: authorId,
-      amount: 1,
-    });
-
-    if (error || !(data as any).success) {
-      return {
-        success: false,
-        donorBalance: 0,
-        authorBalance: 0,
-        message: (data as any)?.message || "Saldo insuficiente.",
-      };
-    }
-
-    return {
-      success: true,
-      donorBalance: (data as any).new_balance,
-      authorBalance: 0,
-      message: "Comentário publicado! 1 VIBE transferida.",
-    };
-  }
-
-  public async processCommentRefund(
-    commentId: string,
-    commentatorId: string,
-  ): Promise<number> {
-    return this.getBalance("current_user");
-  }
-
+  // --- CONSULTAS ---
+  
   public async getBalance(userId: string): Promise<number> {
-    if (userId === "current_user") {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return 0;
-      userId = user.id;
-    }
+    const targetId = userId === "current_user" 
+      ? (await supabase.auth.getUser()).data.user?.id 
+      : userId;
+
+    if (!targetId) return 0;
+
     const { data } = await supabase
       .from("profiles")
       .select("vibes")
-      .eq("id", userId)
+      .eq("id", targetId)
       .single();
+
     return data?.vibes || 0;
   }
 
-  public hasLiked(postId: string, userId: string): boolean {
+  // --- RECOMPENSAS (REGRAS ATUALIZADAS) ---
+  // Processa +1 por postar e tenta +6 de Orvalho Diário.
+  /**
+   * Processa a recompensa por criar conteúdo (Post, Atrio, Aviso).
+   * Inclui a recompensa base (+1) e a tentativa de Orvalho Diário (+6).
+   */
+  public async processReward(type: 'post' | 'atrio' | 'notice'): Promise<TransactionResult> {
+    try {
+      let dewCollected = false;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return { success: false, newBalance: 0, message: "Usuário não autenticado." };
+
+      // 1. Crédito fixo por criação (+1)
+      const { error: rewardError } = await supabase.rpc('increment_vibe', { 
+        amount_to_add: 1,
+        reward_type: `${type}_reward` 
+      });
+
+      if (rewardError) console.warn(`Falha ao incrementar vibe de ${type}:`, rewardError.message);
+
+      // 2. Tentativa de Orvalho Diário (+6)
+      const { data: dewData, error: dewError } = await supabase.rpc('claim_daily_dew', {
+        dew_amount: 6
+      });
+
+      if (!dewError && dewData?.success) {
+        dewCollected = true;
+      }
+
+      const finalBalance = await this.getBalance(user.id);
+
+      return {
+        success: true,
+        newBalance: finalBalance,
+        dewCollected: dewCollected,
+        message: dewCollected 
+          ? "Sinergia completa! +7 Vibes (Criação + Orvalho)." 
+          : "+1 Vibe! A tua voz foi registada."
+      };
+    } catch (error: any) {
+      console.error("Erro no processamento de Vibes:", error);
+      return { success: false, newBalance: 0, message: "Erro ao processar recompensas." };
+    }
+  }
+
+  // Métodos antigos mantidos para compatibilidade ou mapeados para o novo processReward
+  public async processPostCreationVibe(userId: string): Promise<TransactionResult> {
+    return this.processReward('post');
+  }
+
+  public async processAtrioPublicationVibe(): Promise<TransactionResult> {
+    return this.processReward('atrio');
+  }
+
+  public async processCommunityNoticeVibe(): Promise<TransactionResult> {
+    return this.processReward('notice');
+  }
+
+  /**
+   * Processa o custo de um comentário (Transferência de 1 Vibe do leitor para o autor)
+   */
+  public async processCommentTransaction(postId: string, donorId: string, authorId: string, content: string): Promise<{ success: boolean; donorBalance: number; message: string }> {
+    // Se o autor for o mesmo que o comentador, não há transferência, apenas o post
+    if (donorId === authorId) return { success: true, donorBalance: await this.getBalance("current_user"), message: "Comentado!" };
+    
+    // Transferência de 1 Vibe (Taxa zero de sistema, mas 1 Vibe sai do comentador para o autor)
+    const result = await this.transferVibe(authorId, 1);
+    
+    return {
+      success: result.success,
+      donorBalance: result.newBalance,
+      message: result.success ? "Contribuição enviada (+1 Vibe para o autor)!" : result.message
+    };
+  }
+
+  /**
+   * Reembolso simbólico (não implementado totalmente pois o custo de comentário é taxa zero, 
+   * mas o sistema pode querer estornar os zaps recebidos no comentário se ele sumir)
+   */
+  public async processCommentRefund(commentId: string, commentatorId: string): Promise<number> {
+    // No modelo atual, o custo do comentário não é reembolsado (como diz o modal)
+    return await this.getBalance("current_user");
+  }
+
+  public hasLiked(id: string, userId: string): boolean {
+    // Mock local ou consulta rápida - idealmente viria do estado local de 'likes' do post/comentário
     return false;
+  }
+
+  // --- TRANSFERÊNCIAS (TAXA ZERO) ---
+
+  // --- TRANSFERÊNCIAS (TAXA ZERO) ---
+
+  public async transferVibe(recipientId: string, amount: number = 1, postId?: string, commentId?: string): Promise<TransactionResult> {
+    const { data, error } = await supabase.rpc("transfer_vibe", {
+      recipient_id: recipientId,
+      amount: amount,
+      post_id: postId,
+      comment_id: commentId
+    });
+
+    if (error) return { success: false, newBalance: 0, message: error.message };
+
+    return {
+      success: data.success,
+      newBalance: data.new_balance,
+      message: data.success ? "Vibe enviada!" : data.message,
+    };
+  }
+
+  async processLikeTransaction(postId: string, donorId: string, authorId: string) {
+    // Uses the standard transfer flow which handles duplicates via SQL logic
+    const result = await this.transferVibe(authorId, 1, postId);
+    
+    return {
+        success: result.success,
+        donorBalance: result.newBalance,
+        message: result.message
+    };
+  }
+
+  // --- MÉTODOS SOCIAIS ---
+
+  public async processFollow(targetId: string): Promise<TransactionResult> {
+    const { data, error } = await supabase.rpc("follow_user", { target_id: targetId });
+    if (error) return { success: false, newBalance: 0, message: error.message };
+    return { success: true, newBalance: data.new_balance, message: "Seguindo!" };
+  }
+
+  public async processUnfollow(targetId: string): Promise<TransactionResult> {
+    const { data, error } = await supabase.rpc("unfollow_user", { target_id: targetId });
+    if (error) return { success: false, newBalance: 0, message: error.message };
+    return { success: true, newBalance: data.new_balance, message: "Vibe restituída." };
   }
 }
 

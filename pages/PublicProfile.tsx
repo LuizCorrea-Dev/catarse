@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { VirtuosoGrid } from 'react-virtuoso';
 import { 
     Check, Activity, MessageCircle, UserPlus, Zap, 
     BarChart2, Users, Grid, Sparkles, Building2, Loader2,
@@ -26,95 +28,77 @@ interface UserProfileData {
 const PublicProfile: React.FC = () => {
     const { userId } = useParams<{ userId: string }>();
     const navigate = useNavigate();
-    
-    const [profile, setProfile] = useState<UserProfileData | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState<'posts' | 'atrio' | 'groups'>('posts');
-    
-    // Data States
-    const [posts, setPosts] = useState<Post[]>([]);
-    const [atrioItems, setAtrioItems] = useState<AtrioItem[]>([]);
-    const [groups, setGroups] = useState<Community[]>([]);
-    
-    // Stats
-    const [followersCount, setFollowersCount] = useState(0);
-    const [friendsCount, setFriendsCount] = useState(0);
-    
-    // Relationship Status
-    const [isFollowing, setIsFollowing] = useState(false);
-    const [friendStatus, setFriendStatus] = useState<'none' | 'pending' | 'accepted'>('none');
     const [isProcessing, setIsProcessing] = useState(false);
 
-    useEffect(() => {
-        if (userId) {
-            fetchProfileData();
-        }
-    }, [userId]);
+    // --- QUERIES ---
 
-    const fetchProfileData = async () => {
-        setIsLoading(true);
-        try {
-            // 1. Profile Info
-            const { data: userData, error } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('id', userId)
-                .single();
-            
-            if (error || !userData) {
-                console.error("User not found");
-                setIsLoading(false);
-                return;
-            }
+    // 1. Profile Info
+    const { data: profile, isLoading: isLoadingProfile } = useQuery({
+        queryKey: ['profile', userId],
+        queryFn: async () => {
+            const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+            if (error) throw error;
+            return data as UserProfileData;
+        },
+        enabled: !!userId
+    });
 
-            setProfile(userData);
+    // 2. Stats & Relationship
+    const { data: followers = [] } = useQuery({
+        queryKey: ['followers', userId],
+        queryFn: () => connectionService.getFollowers(userId),
+        enabled: !!userId
+    });
+    const { data: friends = [] } = useQuery({
+        queryKey: ['friends', userId],
+        queryFn: () => connectionService.getFriends(userId),
+        enabled: !!userId
+    });
+    const { data: isFollowing } = useQuery({
+        queryKey: ['followState', 'current_user', userId],
+        queryFn: () => connectionService.getFollowState(userId!),
+        enabled: !!userId
+    });
+    const { data: fStatusRaw } = useQuery({
+        queryKey: ['friendshipStatus', 'current_user', userId],
+        queryFn: () => connectionService.getFriendshipStatus(userId!),
+        enabled: !!userId
+    });
 
-            // 2. Stats & Relationship (Parallel)
-            const [
-                followers, 
-                friends,
-                isFollow,
-                fStatus,
-                userPosts,
-                userAtrio,
-                userGroupsList
-            ] = await Promise.all([
-                connectionService.getFollowers(userId),
-                connectionService.getFriends(userId),
-                connectionService.getFollowState(userId!),
-                connectionService.getFriendshipStatus(userId!),
-                postService.getUserPosts(userId!, 'post'),
-                atrioService.getUserItems(userId!),
-                communityService.getUserCommunities(userId!)
-            ]);
+    // 3. Content
+    const { data: posts = [] } = useQuery({
+        queryKey: ['userPosts', userId],
+        queryFn: () => postService.getUserPosts(userId!, 'post'),
+        enabled: !!userId
+    });
+    const { data: atrioItems = [] } = useQuery({
+        queryKey: ['userAtrio', userId],
+        queryFn: () => atrioService.getUserItems(userId!),
+        enabled: !!userId
+    });
+    const { data: groups = [] } = useQuery({
+        queryKey: ['userGroups', userId],
+        queryFn: () => communityService.getUserCommunities(userId!),
+        enabled: !!userId
+    });
 
-            setFollowersCount(followers.length);
-            setFriendsCount(friends.length);
-            setIsFollowing(isFollow);
-            setFriendStatus(fStatus === 'pending_sent' || fStatus === 'pending_received' ? 'pending' : fStatus === 'accepted' ? 'accepted' : 'none');
-            setPosts(userPosts);
-            setAtrioItems(userAtrio);
-            setGroups(userGroupsList);
-
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    const isLoading = isLoadingProfile || !userId;
+    const followersCount = followers.length;
+    const friendsCount = friends.length;
+    const friendStatus = fStatusRaw === 'pending_sent' || fStatusRaw === 'pending_received' ? 'pending' : fStatusRaw === 'accepted' ? 'accepted' : 'none';
 
     const handleFollow = async () => {
         if (!profile) return;
         setIsProcessing(true);
         if (isFollowing) {
-            await transactionService.processUnfollowTransaction('current_user', profile.id);
-            setIsFollowing(false);
-            setFollowersCount(prev => Math.max(0, prev - 1));
+            await transactionService.processUnfollow(profile.id);
         } else {
-            await transactionService.processFollowTransaction('current_user', profile.id);
-            setIsFollowing(true);
-            setFollowersCount(prev => prev + 1);
+            await transactionService.processFollow(profile.id);
         }
+        queryClient.invalidateQueries({ queryKey: ['followers', profile.id] });
+        queryClient.invalidateQueries({ queryKey: ['followState', 'current_user', profile.id] });
         setIsProcessing(false);
     };
 
@@ -125,7 +109,7 @@ const PublicProfile: React.FC = () => {
         setIsProcessing(true);
         const res = await connectionService.requestFriendship(profile.id);
         if (res.success) {
-            setFriendStatus('pending');
+            queryClient.invalidateQueries({ queryKey: ['friendshipStatus', 'current_user', profile.id] });
         } else {
             alert(res.message);
         }
@@ -281,23 +265,30 @@ const PublicProfile: React.FC = () => {
                 {/* Grid Content */}
                 <div className="min-h-[300px]">
                     {activeTab === 'posts' && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                        <div className="h-[60vh] min-h-[400px]">
                             {posts.length > 0 ? (
-                                posts.map(post => (
-                                    <div key={post.id} className="aspect-square group relative overflow-hidden rounded-xl bg-slate-200 dark:bg-slate-800 border border-slate-700/50">
-                                        {post.mediaUrl ? (
-                                            <img alt="Post content" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" src={post.mediaUrl} />
-                                        ) : (
-                                            <div className="w-full h-full p-6 flex items-center justify-center text-center text-slate-500 text-xs">
-                                                {post.content.substring(0, 100)}...
+                                <VirtuosoGrid
+                                    totalCount={posts.length}
+                                    listClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4"
+                                    itemContent={(index) => {
+                                        const post = posts[index];
+                                        return (
+                                            <div key={post.id} className="aspect-square group relative overflow-hidden rounded-xl bg-slate-200 dark:bg-slate-800 border border-slate-700/50">
+                                                {post.mediaUrl ? (
+                                                    <img alt="Post content" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" src={post.mediaUrl} />
+                                                ) : (
+                                                    <div className="w-full h-full p-6 flex items-center justify-center text-center text-slate-500 text-xs">
+                                                        {post.content.substring(0, 100)}...
+                                                    </div>
+                                                )}
+                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 text-white font-bold">
+                                                    <span className="flex items-center gap-1"><Zap size={16} fill="currentColor" /> {post.totalVibesReceived}</span>
+                                                    <span className="flex items-center gap-1"><MessageCircle size={16} fill="currentColor" /> {post.totalComments}</span>
+                                                </div>
                                             </div>
-                                        )}
-                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 text-white font-bold">
-                                            <span className="flex items-center gap-1"><Zap size={16} fill="currentColor" /> {post.totalVibesReceived}</span>
-                                            <span className="flex items-center gap-1"><MessageCircle size={16} fill="currentColor" /> {post.totalComments}</span>
-                                        </div>
-                                    </div>
-                                ))
+                                        );
+                                    }}
+                                />
                             ) : (
                                 <div className="col-span-full py-12 text-center text-slate-500">Nenhuma publicação ainda.</div>
                             )}
@@ -305,16 +296,23 @@ const PublicProfile: React.FC = () => {
                     )}
 
                     {activeTab === 'atrio' && (
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <div className="h-[60vh] min-h-[400px]">
                             {atrioItems.length > 0 ? (
-                                atrioItems.map(item => (
-                                    <div key={item.id} className="relative group rounded-xl overflow-hidden cursor-pointer aspect-[3/4]">
-                                        <img src={item.url} alt={item.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
-                                            <h3 className="text-white font-bold text-sm truncate">{item.title}</h3>
-                                        </div>
-                                    </div>
-                                ))
+                                <VirtuosoGrid
+                                    totalCount={atrioItems.length}
+                                    listClassName="grid grid-cols-2 md:grid-cols-3 gap-4"
+                                    itemContent={(index) => {
+                                        const item = atrioItems[index];
+                                        return (
+                                            <div key={item.id} className="relative group rounded-xl overflow-hidden cursor-pointer aspect-[3/4] pb-4">
+                                                <img src={item.url} alt={item.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
+                                                    <h3 className="text-white font-bold text-sm truncate">{item.title}</h3>
+                                                </div>
+                                            </div>
+                                        );
+                                    }}
+                                />
                             ) : (
                                 <div className="col-span-full py-12 text-center text-slate-500">Átrio vazio.</div>
                             )}

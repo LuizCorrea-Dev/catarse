@@ -13,14 +13,17 @@ export interface Friend {
   isFollowing?: boolean;
 }
 
+export type MessageType = "text" | "image" | "video" | "audio" | "promotion_request";
+
 export interface PrivateMessage {
   id: string;
   senderId: string;
   content: string;
-  type: "text" | "image" | "video" | "audio" | "promotion_request";
+  type: MessageType;
   mediaUrl?: string;
   timestamp: string;
   isRead: boolean;
+  receiverId?: string;
 }
 
 class ConnectionService {

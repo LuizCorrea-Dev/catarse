@@ -23,10 +23,11 @@ import {
   PrivacyType,
   RoleType,
 } from "../backend/CommunityService";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { VirtuosoGrid } from "react-virtuoso";
 
 const CommunityCatalog: React.FC = () => {
-  const [communities, setCommunities] = useState<Community[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<"ALL" | RoleType | "SUSPENDED">(
     "ALL",
@@ -35,16 +36,20 @@ const CommunityCatalog: React.FC = () => {
     useState<Community | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  useEffect(() => {
-    const fetch = async () => {
-      setIsLoading(true);
-      const data = await communityService.getCommunities(searchTerm);
-      setCommunities(data);
-      setIsLoading(false);
-    };
-    const timeoutId = setTimeout(fetch, 500);
-    return () => clearTimeout(timeoutId);
-  }, [searchTerm]);
+  // 1. Query for Communities
+  const { data: communities = [], isLoading } = useQuery({
+    queryKey: ['communities', searchTerm],
+    queryFn: () => communityService.getCommunities(searchTerm),
+    staleTime: 1000 * 60 * 5,
+  });
+
+  // 2. Mutation for joining
+  const joinMutation = useMutation({
+    mutationFn: (communityId: string) => communityService.joinCommunity(communityId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['communities'] });
+    }
+  });
 
   const handleOpenPrivateModal = (community: Community) => {
     setSelectedPrivateCommunity(community);
@@ -55,21 +60,11 @@ const CommunityCatalog: React.FC = () => {
   };
 
   const handleConfirmRequest = async (communityId: string) => {
-    const result = await communityService.joinCommunity(communityId);
-    if (result.success) {
-      setCommunities((prev) =>
-        prev.map((c) =>
-          c.id === communityId ? { ...c, currentUserRole: "PENDING" } : c,
-        ),
-      );
-    }
+    joinMutation.mutate(communityId);
   };
 
   const handleCommunityCreated = (newCommunity: Community) => {
-    setCommunities((prev) => {
-      if (prev.some((c) => c.id === newCommunity.id)) return prev;
-      return [newCommunity, ...prev];
-    });
+    queryClient.invalidateQueries({ queryKey: ['communities'] });
     if (searchTerm !== "") setSearchTerm("");
     setIsCreateModalOpen(false);
   };
@@ -141,14 +136,23 @@ const CommunityCatalog: React.FC = () => {
           <Loader2 className="animate-spin text-[#50c878]" size={40} />
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCommunities.map((community) => (
-            <CommunityCard
-              key={community.id}
-              community={community}
-              onPrivateClick={() => handleOpenPrivateModal(community)}
-            />
-          ))}
+        <div className="h-[60vh] min-h-[400px]">
+          <VirtuosoGrid
+            totalCount={filteredCommunities.length}
+            listClassName="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+            itemContent={(index) => {
+              const community = filteredCommunities[index];
+              return (
+                <div className="pb-4 h-full">
+                  <CommunityCard
+                    key={community.id}
+                    community={community}
+                    onPrivateClick={() => handleOpenPrivateModal(community)}
+                  />
+                </div>
+              );
+            }}
+          />
         </div>
       )}
 
