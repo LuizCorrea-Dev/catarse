@@ -890,7 +890,9 @@ const ChatChannelView: React.FC<{
                 content: newMsg.content,
                 timestamp: new Date(newMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 type: newMsg.type as "text" | "image" | "audio" | "video",
-                mediaUrl: newMsg.mediaUrl
+                mediaUrl: newMsg.mediaUrl,
+                channelId: channelId,
+                vibes: 0
             }];
         });
     });

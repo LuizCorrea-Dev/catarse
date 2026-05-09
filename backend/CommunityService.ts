@@ -53,7 +53,7 @@ export interface CommunityMessage {
   mediaUrl?: string;
   timestamp: string;
   vibes: number;
-  type: "text" | "image";
+  type: "text" | "image" | "audio" | "video";
 }
 
 class CommunityService {
@@ -128,7 +128,7 @@ class CommunityService {
           isMember: isMember,
           currentUserRole: userRole,
           isSuspended: row.is_suspended,
-        };
+        } as Community;
       }),
     );
 
@@ -517,7 +517,7 @@ class CommunityService {
         minute: "2-digit",
       }),
       vibes: m.vibes_count,
-      type: m.type,
+      type: m.type as "text" | "image" | "audio" | "video",
     }));
   }
 
