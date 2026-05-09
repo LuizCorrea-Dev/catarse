@@ -62,9 +62,9 @@ class PostService {
     .select(`
       *,
       profiles (username, avatar_url),
-      post_likes (user_id),
-      likes_count,
-      comments_count
+      likes (user_id),
+      likes_count: likes(count),
+      comments_count: comments(count)
     `);
 
   // Filtros
@@ -96,12 +96,12 @@ class PostService {
     mediaUrl: row.media_url,
     tags: row.tags || [],
     initialVibes: 0,
-    totalVibesReceived: row.likes_count || 0,
-    totalComments: row.comments_count || 0,
+    totalVibesReceived: row.likes_count?.[0]?.count || 0,
+    totalComments: row.comments_count?.[0]?.count || 0,
     type: row.type,
     communityId: row.community_id,
     createdAt: row.created_at,
-    userHasLiked: user ? row.post_likes?.some((l: any) => l.user_id === user.id) : false,
+    userHasLiked: user ? row.likes?.some((l: any) => l.user_id === user.id) : false,
     isPinned: row.is_pinned || false,
   }));
 }
@@ -244,8 +244,8 @@ class PostService {
       .select(`
         *,
         profiles (username, avatar_url),
-        post_likes (user_id),
-        likes_count: post_likes(count),
+        likes (user_id),
+        likes_count: likes(count),
         comments_count: comments(count)
       `)
       .eq("user_id", targetUserId)
@@ -268,7 +268,7 @@ class PostService {
       type: row.type,
       communityId: row.community_id,
       createdAt: row.created_at,
-      userHasLiked: currentUser ? row.post_likes?.some((l: any) => l.user_id === currentUser.id) : false,
+      userHasLiked: currentUser ? row.likes?.some((l: any) => l.user_id === currentUser.id) : false,
       isPinned: row.is_pinned || false,
     }));
   }
