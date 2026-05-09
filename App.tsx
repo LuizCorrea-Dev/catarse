@@ -13,6 +13,7 @@ import PublicProfile from './pages/PublicProfile';
 import CreatePost from './pages/CreatePost';
 import CommunityCatalog from './pages/CommunityCatalog';
 import CommunityView from './pages/CommunityView';
+import InvitePage from './pages/InvitePage';
 import ConnectionsPage from './pages/ConnectionsPage';
 import { SideNavigation, MobileNavigation } from './components/SideNavigation';
 import { AuthForm } from './components/AuthForm';
@@ -114,6 +115,7 @@ const AppContent: React.FC = () => {
     <>
       {!session ? (
         <Routes>
+          <Route path="/invite/:code" element={<InvitePage />} />
           <Route path="*" element={<AuthPageWrapper />} />
         </Routes>
       ) : (
@@ -156,6 +158,7 @@ const AppContent: React.FC = () => {
                 <Route path="/communities" element={<CommunityCatalog />} />
                 <Route path="/communities/:id" element={<CommunityView />} />
                 <Route path="/communities/:id/channel/:channelId" element={<CommunityView />} />
+                <Route path="/invite/:code" element={<InvitePage />} />
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>
             </main>

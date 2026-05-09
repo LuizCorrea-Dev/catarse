@@ -722,6 +722,68 @@ class CommunityService {
     return !error;
   }
 
+  public async getCommunityByInviteCode(code: string): Promise<Community | undefined> {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // Como o id é um UUID, precisamos buscar todas as comunidades e encontrar a que tem o prefixo
+    // Num cenário de produção real com milhares de comunidades, usaríamos uma função RPC do Postgres.
+    const { data, error } = await supabase
+      .from("communities")
+      .select("*");
+
+    if (error || !data) return undefined;
+
+    const comm = data.find((c: any) => c.id.startsWith(code));
+    if (!comm) return undefined;
+
+    let role: RoleType | null = null;
+    let isMember = false;
+
+    if (user) {
+      const { data: memberData } = await supabase
+        .from("community_members")
+        .select("role")
+        .eq("community_id", comm.id)
+        .eq("user_id", user.id)
+        .single();
+
+      if (memberData) {
+        role = memberData.role as RoleType;
+        isMember = role === "OWNER" || role === "MODERATOR" || role === "MEMBER";
+      }
+    }
+
+    if (comm.is_suspended) {
+      if (role !== "OWNER" && role !== "MODERATOR") {
+        return undefined;
+      }
+    }
+
+    const { count } = await supabase
+      .from("community_members")
+      .select("*", { count: "exact", head: true })
+      .eq("community_id", comm.id)
+      .neq("role", "PENDING")
+      .neq("role", "REJECTED");
+
+    const fallbackSeed = comm.id.replace(/-/g, "");
+
+    return {
+      id: comm.id,
+      name: comm.name,
+      description: comm.description,
+      bannerUrl: comm.banner_url || `https://picsum.photos/seed/${fallbackSeed}/800/300`,
+      avatarUrl: comm.avatar_url || `https://picsum.photos/seed/${fallbackSeed}/200`,
+      privacy: comm.privacy,
+      memberCount: count || 0,
+      tags: comm.tags || [],
+      isMember,
+      currentUserRole: role,
+      isSuspended: comm.is_suspended,
+      welcomeMessage: comm.welcome_message,
+    };
+  }
+
   public async updateCommunity(id: string, updates: any) {
     const updateData: any = {};
     if (updates.name !== undefined) updateData.name = updates.name;
