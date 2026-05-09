@@ -1695,7 +1695,7 @@ const AdvancedManagementModal: React.FC<{
     onDelete(); // Trigger navigation away
   };
 
-  const inviteLink = `https://catarse.social/invite/${community.id.substring(0, 8)}`;
+  const inviteLink = `https://catarse.life/invite/${community.id.substring(0, 8)}`;
 
   const filteredMembers = members.filter((m) => {
     if (m.role === "PENDING" || m.role === "REJECTED") return false;
