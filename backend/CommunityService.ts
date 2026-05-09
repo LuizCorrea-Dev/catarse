@@ -723,17 +723,27 @@ class CommunityService {
   }
 
   public async getCommunityByInviteCode(code: string): Promise<Community | undefined> {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user;
 
-    // Como o id é um UUID, precisamos buscar todas as comunidades e encontrar a que tem o prefixo
-    // Num cenário de produção real com milhares de comunidades, usaríamos uma função RPC do Postgres.
-    const { data, error } = await supabase
+    // Tentativa 1: Busca direta usando ilike (funciona se o Supabase/PostgREST fizer o cast automático)
+    let { data: comm, error } = await supabase
       .from("communities")
-      .select("*");
+      .select("*")
+      .filter("id", "ilike", `${code}%`)
+      .maybeSingle();
 
-    if (error || !data) return undefined;
+    // Tentativa 2: Fallback para busca em memória (se o filtro de UUID falhar)
+    if (!comm) {
+      const { data: allData } = await supabase
+        .from("communities")
+        .select("*");
+      
+      if (allData) {
+        comm = allData.find((c: any) => c.id.toLowerCase().startsWith(code.toLowerCase()));
+      }
+    }
 
-    const comm = data.find((c: any) => c.id.startsWith(code));
     if (!comm) return undefined;
 
     let role: RoleType | null = null;

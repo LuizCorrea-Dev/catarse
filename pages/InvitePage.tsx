@@ -7,6 +7,7 @@ import { Loader2, Users, Shield, Globe, Lock, ArrowRight, Check } from 'lucide-r
 const InvitePage: React.FC = () => {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
+  // State for community invite
   const [community, setCommunity] = useState<Community | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
